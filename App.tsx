@@ -300,12 +300,19 @@ const App: React.FC = () => {
   // AI Functionality
   const askAi = async (query: string) => {
     if (!query.trim()) return;
+    
+    const apiKey = process.env.API_KEY || (window as any).process?.env?.API_KEY;
+    if (!apiKey) {
+      setAiResponse("L'API Key n'est pas configurée. Veuillez l'ajouter dans les variables d'environnement Vercel.");
+      return;
+    }
+
     setIsAiLoading(true);
     setAiResponse(null);
     setAiSources([]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const context = result 
         ? `L'utilisateur effectue un calcul de Valeur en Douane (VD) au Maroc. 
            Incoterm: ${incoterm}, Régime: ${regime}.
@@ -335,7 +342,6 @@ const App: React.FC = () => {
         setAiSources(sources);
       }
 
-      // Scroll to result
       setTimeout(() => {
         aiSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }, 100);
