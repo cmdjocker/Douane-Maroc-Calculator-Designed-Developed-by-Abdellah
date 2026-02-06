@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { 
   Calculator, 
   Plus, 
@@ -13,19 +13,12 @@ import {
   LayoutDashboard,
   Globe,
   Coins,
-  ShieldCheck,
   Truck,
-  Package,
-  Sparkles,
-  Search,
-  MessageSquare,
-  ExternalLink,
-  Loader2
+  Package
 } from 'lucide-react';
 import { Article, Incoterm, Regime, GlobalLogistics, CalculationResult } from './types';
 import { calculateCustoms, formatCurrency, formatDecimal, sanitizeNumericInput } from './utils/calculations';
 import { generatePDFReport } from './utils/pdfGenerator';
-import { GoogleGenAI } from "@google/genai";
 
 interface ArticleRowProps {
   art: Article;
@@ -190,13 +183,6 @@ const App: React.FC = () => {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
 
-  // AI State
-  const [aiQuery, setAiQuery] = useState('');
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
-  const [aiSources, setAiSources] = useState<{title: string, uri: string}[]>([]);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const aiSectionRef = useRef<HTMLDivElement>(null);
-
   const isMixedMode = regime !== Regime.ONLY_023;
   const isCFR = incoterm === Incoterm.CFR;
 
@@ -233,8 +219,6 @@ const App: React.FC = () => {
       'log-fretGlobalMAD': '0'
     });
     setResult(null);
-    setAiResponse(null);
-    setAiSources([]);
   }, []);
 
   const addArticle = (type: '023' | 'AT') => {
@@ -295,63 +279,6 @@ const App: React.FC = () => {
       
       return newInputs;
     });
-  };
-
-  // AI Functionality
-  const askAi = async (query: string) => {
-    if (!query.trim()) return;
-    
-    const apiKey = process.env.API_KEY || (window as any).process?.env?.API_KEY;
-    if (!apiKey) {
-      setAiResponse("L'API Key n'est pas configurée. Veuillez l'ajouter dans les variables d'environnement Vercel.");
-      return;
-    }
-
-    setIsAiLoading(true);
-    setAiResponse(null);
-    setAiSources([]);
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const context = result 
-        ? `L'utilisateur effectue un calcul de Valeur en Douane (VD) au Maroc. 
-           Incoterm: ${incoterm}, Régime: ${regime}.
-           Logistique: Fret Global=${logistics.fretGlobalMAD} MAD, Acconage=${logistics.royaltiesMAD} MAD.
-           VD Totale calculée: ${result.totalValeurDouane} MAD.
-           Détails 023: ${result.regime023.valeurDouaneTotal} MAD.
-           Nombre d'articles: ${articles023.length + articlesAT.length}.`
-        : "L'utilisateur n'a pas encore lancé de calcul. Il cherche probablement des informations générales sur la douane marocaine (NGP/SH).";
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `${context}\n\nQuestion de l'utilisateur: ${query}`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          systemInstruction: "Tu es un expert en douane marocaine (ADII). Tu expliques les calculs de VD, les incoterms, et tu aides à trouver les codes NGP/SH. Réponds en français de manière concise et professionnelle. Utilise toujours la recherche Google pour les codes NGP/SH ou les réglementations récentes."
-        },
-      });
-
-      const text = response.text || "Désolé, je n'ai pas pu générer de réponse.";
-      setAiResponse(text);
-
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (chunks) {
-        const sources = chunks
-          .filter(c => c.web)
-          .map(c => ({ title: c.web!.title, uri: c.web!.uri }));
-        setAiSources(sources);
-      }
-
-      setTimeout(() => {
-        aiSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }, 100);
-
-    } catch (error) {
-      console.error("AI Error:", error);
-      setAiResponse("Une erreur est survenue lors de la communication avec l'AI. Veuillez réessayer.");
-    } finally {
-      setIsAiLoading(false);
-    }
   };
 
   return (
@@ -482,108 +409,6 @@ const App: React.FC = () => {
             >
               <RotateCcw className="w-6 h-6" /> RESET
             </button>
-          </div>
-
-          {/* AI Assistant Section */}
-          <div ref={aiSectionRef} className="relative mt-12 bg-white rounded-[2.5rem] p-8 shadow-2xl border-2 border-blue-50 overflow-hidden">
-            <div className="absolute top-0 right-0 p-8 opacity-5">
-              <Sparkles className="w-32 h-32 text-blue-600" />
-            </div>
-            
-            <div className="flex items-center gap-4 mb-6 relative">
-              <div className="p-3 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg">
-                <Sparkles className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h3 className="text-xl font-black uppercase tracking-tight text-slate-800 leading-none">Assistant AI Douane</h3>
-                <p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">Recherche NGP/SH & Explication</p>
-              </div>
-            </div>
-
-            <div className="space-y-6 relative">
-              <div className="flex flex-wrap gap-2">
-                <button 
-                  onClick={() => askAi("Explique-moi les détails de mon calcul de VD actuel.")}
-                  disabled={!result || isAiLoading}
-                  className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-black rounded-full transition-all border border-blue-100 uppercase tracking-wider disabled:opacity-40"
-                >
-                  <MessageSquare className="w-3 h-3 inline mr-2" /> Expliquer le calcul
-                </button>
-                <button 
-                  onClick={() => askAi("Qu'est-ce que le code NGP et comment l'utiliser au Maroc ?")}
-                  disabled={isAiLoading}
-                  className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-black rounded-full transition-all border border-emerald-100 uppercase tracking-wider"
-                >
-                  <Search className="w-3 h-3 inline mr-2" /> Infos Code NGP
-                </button>
-                <button 
-                  onClick={() => askAi("Quelles sont les taxes principales pour l'importation au Maroc ?")}
-                  disabled={isAiLoading}
-                  className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-black rounded-full transition-all border border-amber-100 uppercase tracking-wider"
-                >
-                  <Info className="w-3 h-3 inline mr-2" /> Fiscalité Douane
-                </button>
-              </div>
-
-              <div className="flex gap-3">
-                <input 
-                  type="text" 
-                  value={aiQuery}
-                  onChange={(e) => setAiQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && askAi(aiQuery)}
-                  placeholder="Rechercher un code NGP ou poser une question sur le calcul..."
-                  className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none focus:border-blue-600 focus:bg-white transition-all text-sm shadow-inner"
-                />
-                <button 
-                  onClick={() => askAi(aiQuery)}
-                  disabled={isAiLoading || !aiQuery.trim()}
-                  className="px-8 bg-[#1e3a8a] hover:bg-blue-800 text-white rounded-2xl font-black transition-all shadow-lg flex items-center justify-center disabled:bg-slate-300"
-                >
-                  {isAiLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
-                </button>
-              </div>
-
-              {(aiResponse || isAiLoading) && (
-                <div className="bg-slate-50 rounded-[2rem] p-6 border border-slate-100 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                  {isAiLoading ? (
-                    <div className="flex flex-col items-center justify-center py-12 gap-4">
-                      <div className="relative">
-                        <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-                        <Sparkles className="w-6 h-6 text-amber-500 absolute -top-2 -right-2 animate-bounce" />
-                      </div>
-                      <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] animate-pulse">L'AI analyse les bases de données douanières...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="prose prose-slate max-w-none">
-                        <p className="text-sm leading-relaxed font-medium text-slate-700 whitespace-pre-wrap">
-                          {aiResponse}
-                        </p>
-                      </div>
-                      
-                      {aiSources.length > 0 && (
-                        <div className="mt-6 pt-6 border-t border-slate-200">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Sources de confiance (Google Search):</p>
-                          <div className="flex flex-wrap gap-2">
-                            {aiSources.map((source, idx) => (
-                              <a 
-                                key={idx} 
-                                href={source.uri} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-blue-600 hover:border-blue-300 hover:text-blue-700 transition-all"
-                              >
-                                {source.title} <ExternalLink className="w-3 h-3" />
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
