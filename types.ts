@@ -3,11 +3,13 @@ export enum Incoterm {
   CFR = 'CFR',
   CIF = 'CIF',
   DAP = 'DAP',
-  EXW = 'EXW'
+  EXW = 'EXW',
+  DAT = 'DAT'
 }
 
 export enum Regime {
   ONLY_023 = '023',
+  ONLY_311 = '311',
   MIXED_312 = '023+312',
   MIXED_311 = '023+311'
 }
@@ -18,14 +20,14 @@ export interface Article {
   poidsBrut: number;
   poidsNet: number;
   valeurEUR: number;
-  fretEUR?: number; 
-  fretMAD?: number; 
+  fretEUR?: number;
+  fretMAD?: number;
 }
 
 export interface GlobalLogistics {
   fretGlobalEUR: number;
   fretGlobalMAD: number;
-  assuranceTaux: number; 
+  assuranceTaux: number;
   royaltiesMAD: number;
   tauxEurMad: number;
 }
@@ -33,6 +35,7 @@ export interface GlobalLogistics {
 export interface ArticleResult {
   id: number;
   designation: string;
+  poidsBrut: number;
   valeurEUR: number;
   contreValeurMAD: number;
   fretProRataMAD: number;
@@ -53,6 +56,9 @@ export interface RegimeDetail {
 }
 
 export interface CalculationResult {
+  incoterm: Incoterm;
+  tauxEurMad: number;
+  assuranceTaux: number;
   totalValeurEUR: number;
   totalValeurMAD: number;
   totalPoidsBrut: number;
@@ -64,6 +70,6 @@ export interface CalculationResult {
   perArticle: ArticleResult[];
   perArticle023: ArticleResult[];
   perArticleAT: ArticleResult[];
-  regime023: RegimeDetail;
-  regimeSecondary?: RegimeDetail;
+  regime023?: RegimeDetail;
+  regimeAT?: RegimeDetail;
 }

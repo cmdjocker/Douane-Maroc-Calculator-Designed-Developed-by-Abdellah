@@ -1,464 +1,1096 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { 
-  Calculator, 
-  Plus, 
-  Trash2, 
-  FileDown, 
-  TrendingUp, 
-  Settings,
-  AlertCircle,
-  Info,
-  Play,
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import {
+  Calculator,
+  Plus,
+  Trash2,
+  FileDown,
   RotateCcw,
-  LayoutDashboard,
-  Globe,
-  Coins,
-  Truck,
-  Package
+  Play,
+  Info,
+  Package,
+  TrendingUp,
+  Layers
 } from 'lucide-react';
-import { Article, Incoterm, Regime, GlobalLogistics, CalculationResult } from './types';
-import { calculateCustoms, formatCurrency, formatDecimal, sanitizeNumericInput } from './utils/calculations';
+import {
+  Article,
+  Incoterm,
+  Regime,
+  GlobalLogistics,
+  CalculationResult
+} from './types';
+import {
+  calculateCustoms,
+  formatCurrency,
+  formatDecimal,
+  sanitizeNumericInput
+} from './utils/calculations';
 import { generatePDFReport } from './utils/pdfGenerator';
+import { DesignationCombobox } from './components/DesignationCombobox';
 
-interface ArticleRowProps {
-  art: Article;
-  type: '023' | 'AT';
-  totalGlobalPb: number;
-  logistics: GlobalLogistics;
-  rawInputs: Record<string, string>;
-  isCFR: boolean;
-  updateArticle: (type: '023' | 'AT', id: number, field: keyof Article, value: string) => void;
-  removeArticle: (type: '023' | 'AT', id: number) => void;
+interface IncotermMeta {
+  code: Incoterm;
+  label: string;
+  formula: string;
+  description: string;
+  showFreight: boolean;
+  showAcconage: boolean;
+  showAssurance: boolean;
+  defaultAssuranceTaux: number;
+  defaultRoyaltiesMAD: number;
+  weightLabel: string;
 }
 
-const ArticleRow: React.FC<ArticleRowProps> = ({ 
-  art, 
-  type, 
-  totalGlobalPb, 
-  logistics, 
-  rawInputs, 
-  isCFR,
-  updateArticle, 
-  removeArticle 
-}) => {
-  const acconage = totalGlobalPb > 0 ? (logistics.royaltiesMAD / totalGlobalPb) * (art.poidsBrut || 0) : 0;
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-slate-50 rounded-2xl items-end border border-slate-100 group hover:border-blue-200 transition-all">
-      <div className="md:col-span-3">
-        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Désignation</label>
-        <input 
-          type="text" 
-          value={art.designation} 
-          onChange={e => updateArticle(type, art.id, 'designation', e.target.value)} 
-          className="w-full bg-white border rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-500" 
-          placeholder="Articles..." 
-        />
-      </div>
-      <div className="md:col-span-2">
-        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Valeur (€)</label>
-        <input 
-          type="text" 
-          value={rawInputs[`${type}-${art.id}-valeurEUR`] ?? art.valeurEUR.toString()} 
-          onChange={e => updateArticle(type, art.id, 'valeurEUR', e.target.value)} 
-          className="w-full bg-white border rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-500" 
-          placeholder="0" 
-        />
-      </div>
-      <div className="md:col-span-1">
-        <label className="text-[11px] font-black text-blue-400 uppercase tracking-widest ml-1">Fret (€)</label>
-        <input 
-          type="text" 
-          value={rawInputs[`${type}-${art.id}-fretEUR`] ?? (art.fretEUR || 0).toString()} 
-          onChange={e => updateArticle(type, art.id, 'fretEUR', e.target.value)} 
-          className="w-full bg-white border border-blue-100 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-500" 
-          placeholder="0" 
-        />
-      </div>
-      <div className="md:col-span-2">
-        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">
-          {isCFR ? 'Net (KG)' : 'Brut (KG)'}
-        </label>
-        <input 
-          type="text" 
-          value={rawInputs[`${type}-${art.id}-poidsBrut`] ?? art.poidsBrut.toString()} 
-          onChange={e => updateArticle(type, art.id, 'poidsBrut', e.target.value)} 
-          className="w-full bg-white border rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-500" 
-          placeholder="0" 
-        />
-      </div>
-      <div className="md:col-span-3">
-        <label className="text-[11px] font-black text-emerald-600 uppercase tracking-widest ml-1">Acconage (DH)</label>
-        <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl px-3 py-2 text-[10px] font-black text-emerald-700 truncate select-none">
-          {formatDecimal(acconage)}
-        </div>
-      </div>
-      <div className="md:col-span-1 flex justify-center pb-1">
-        <button 
-          onClick={() => removeArticle(type, art.id)} 
-          className="p-2 text-slate-300 hover:text-rose-500 rounded-lg transition-all"
-          title="Supprimer l'article"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
+const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
+  [Incoterm.FOB]: {
+    code: Incoterm.FOB,
+    label: 'Free On Board',
+    formula: 'VD = (Valeur € × Taux) + Fret + Assurance (0,5% sur CV + Fret) + Acconage',
+    description:
+      'Le fret maritime, l’assurance et l’acconage sont intégrés à la Valeur en Douane.',
+    showFreight: true,
+    showAcconage: true,
+    showAssurance: true,
+    defaultAssuranceTaux: 0.5,
+    defaultRoyaltiesMAD: 2300,
+    weightLabel: 'Brut (KG)'
+  },
+  [Incoterm.CFR]: {
+    code: Incoterm.CFR,
+    label: 'Cost and Freight',
+    formula: 'VD = (Valeur € × Taux) + Assurance (0,5% sur CV) + Acconage · Fret exclu',
+    description:
+      'Le fret est déjà inclus dans la valeur facture et reste exclu du calcul de la VD.',
+    showFreight: true,
+    showAcconage: true,
+    showAssurance: true,
+    defaultAssuranceTaux: 0.5,
+    defaultRoyaltiesMAD: 2300,
+    weightLabel: 'Net (KG)'
+  },
+  [Incoterm.CIF]: {
+    code: Incoterm.CIF,
+    label: 'Cost, Insurance & Freight',
+    formula: 'VD = (Valeur € × Taux) + Acconage · Fret et Assurance inclus',
+    description:
+      'Le fret et l’assurance sont inclus dans la valeur CIF. Seul l’acconage est ajouté.',
+    showFreight: false,
+    showAcconage: true,
+    showAssurance: true,
+    defaultAssuranceTaux: 0,
+    defaultRoyaltiesMAD: 2300,
+    weightLabel: 'Brut (KG)'
+  },
+  [Incoterm.DAP]: {
+    code: Incoterm.DAP,
+    label: 'Delivered at Place',
+    formula: 'VD = (Valeur € × Taux) + Fret (si applicable) + Assurance (0,5%) + Acconage',
+    description:
+      'Livré au lieu convenu. Laissez le fret à 0 s’il est déjà compris dans le prix facture.',
+    showFreight: true,
+    showAcconage: true,
+    showAssurance: true,
+    defaultAssuranceTaux: 0.5,
+    defaultRoyaltiesMAD: 2300,
+    weightLabel: 'Brut (KG)'
+  },
+  [Incoterm.EXW]: {
+    code: Incoterm.EXW,
+    label: 'Ex Works',
+    formula: 'VD = (Valeur € × Taux) + Fret / Transport + Assurance (0,5% sur CV + Fret) + Acconage',
+    description:
+      'Départ usine : tous les frais de transport, assurance et acconage s’ajoutent à la VD.',
+    showFreight: true,
+    showAcconage: true,
+    showAssurance: true,
+    defaultAssuranceTaux: 0.5,
+    defaultRoyaltiesMAD: 2300,
+    weightLabel: 'Brut (KG)'
+  },
+  [Incoterm.DAT]: {
+    code: Incoterm.DAT,
+    label: 'Delivered at Terminal',
+    formula: 'VD = (Valeur € × Taux) + Assurance (Valeur € × Taux × 0,5%) · Sans Acconage',
+    description:
+      'Rendu au terminal : calcul basé uniquement sur la contre-valeur et l’assurance (0,5%), sans fret ni acconage.',
+    showFreight: false,
+    showAcconage: false,
+    showAssurance: true,
+    defaultAssuranceTaux: 0.5,
+    defaultRoyaltiesMAD: 0,
+    weightLabel: 'Brut (KG)'
+  }
 };
 
-interface InventoryCardProps {
+interface RegimeMeta {
+  code: Regime;
+  label: string;
+  subtitle: string;
+}
+
+const REGIME_CONFIGS: Record<Regime, RegimeMeta> = {
+  [Regime.ONLY_023]: {
+    code: Regime.ONLY_023,
+    label: 'DUM 023',
+    subtitle: 'Mise à la consommation unique'
+  },
+  [Regime.ONLY_311]: {
+    code: Regime.ONLY_311,
+    label: 'DUM 311 (AT)',
+    subtitle: 'Admission temporaire seule (sans 023)'
+  },
+  [Regime.MIXED_312]: {
+    code: Regime.MIXED_312,
+    label: '023 + 312 (AT)',
+    subtitle: 'Consommation + AT Emballage'
+  },
+  [Regime.MIXED_311]: {
+    code: Regime.MIXED_311,
+    label: '023 + 311 (AT)',
+    subtitle: 'Consommation + Admission temporaire'
+  }
+};
+
+const INCOTERM_ORDER: Incoterm[] = [
+  Incoterm.FOB,
+  Incoterm.CFR,
+  Incoterm.CIF,
+  Incoterm.DAP,
+  Incoterm.EXW,
+  Incoterm.DAT
+];
+
+const REGIME_ORDER: Regime[] = [
+  Regime.ONLY_023,
+  Regime.ONLY_311,
+  Regime.MIXED_312,
+  Regime.MIXED_311
+];
+
+const DEFAULT_EUR_MAD = 10.85;
+const SAVED_PRODUCTS_STORAGE_KEY = 'douane_maroc_saved_designations_v1';
+
+const createInitialArticle = (id: number): Article => ({
+  id,
+  designation: '',
+  poidsBrut: 0,
+  poidsNet: 0,
+  valeurEUR: 0,
+  fretEUR: 0
+});
+
+interface RegimeFormState {
+  logistics: GlobalLogistics;
+  articles023: Article[];
+  articlesAT: Article[];
+  rawInputs: Record<string, string>;
+  result: CalculationResult | null;
+}
+
+const createInitialRegimeState = (incoterm: Incoterm): RegimeFormState => {
+  const cfg = INCOTERM_CONFIGS[incoterm];
+  return {
+    logistics: {
+      fretGlobalEUR: 0,
+      fretGlobalMAD: 0,
+      assuranceTaux: cfg.defaultAssuranceTaux,
+      royaltiesMAD: cfg.defaultRoyaltiesMAD,
+      tauxEurMad: DEFAULT_EUR_MAD
+    },
+    articles023: [createInitialArticle(1)],
+    articlesAT: [createInitialArticle(1)],
+    rawInputs: {
+      'log-tauxEurMad': DEFAULT_EUR_MAD.toString().replace('.', ','),
+      'log-royaltiesMAD': cfg.defaultRoyaltiesMAD.toString(),
+      'log-assuranceTaux': cfg.defaultAssuranceTaux.toString().replace('.', ','),
+      'log-fretGlobalEUR': '0',
+      'log-fretGlobalMAD': '0'
+    },
+    result: null
+  };
+};
+
+const createInitialIncotermRegimes = (incoterm: Incoterm): Record<Regime, RegimeFormState> => ({
+  [Regime.ONLY_023]: createInitialRegimeState(incoterm),
+  [Regime.ONLY_311]: createInitialRegimeState(incoterm),
+  [Regime.MIXED_312]: createInitialRegimeState(incoterm),
+  [Regime.MIXED_311]: createInitialRegimeState(incoterm)
+});
+
+interface ArticleTableCardProps {
   type: '023' | 'AT';
   title: string;
   list: Article[];
-  icon: any;
-  isMixedMode: boolean;
-  isCFR: boolean;
+  config: IncotermMeta;
   totalGlobalPb: number;
   logistics: GlobalLogistics;
   rawInputs: Record<string, string>;
-  updateArticle: (type: '023' | 'AT', id: number, field: keyof Article, value: string) => void;
-  removeArticle: (type: '023' | 'AT', id: number) => void;
-  addArticle: (type: '023' | 'AT') => void;
+  savedProducts: string[];
+  onRemoveSavedProduct: (product: string) => void;
+  onUpdate: (type: '023' | 'AT', id: number, field: keyof Article, value: string) => void;
+  onRemove: (type: '023' | 'AT', id: number) => void;
+  onAdd: (type: '023' | 'AT') => void;
 }
 
-const InventoryCard: React.FC<InventoryCardProps> = ({ 
-  type, title, list, icon: Icon, isMixedMode, isCFR, totalGlobalPb, logistics, rawInputs, updateArticle, removeArticle, addArticle 
-}) => (
-  <div className={`bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden ${isMixedMode && type === 'AT' ? 'border-emerald-200' : ''}`}>
-    <div className={`px-6 py-4 flex items-center justify-between border-b ${type === '023' ? 'bg-blue-50/50' : 'bg-emerald-50/50'}`}>
-      <div className="flex items-center gap-3">
-        <Icon className={`w-5 h-5 ${type === '023' ? 'text-blue-600' : 'text-emerald-600'}`} />
-        <h2 className={`text-sm font-black uppercase tracking-tight ${type === '023' ? 'text-blue-900' : 'text-emerald-900'}`}>{title}</h2>
+const ArticleTableCard: React.FC<ArticleTableCardProps> = ({
+  type,
+  title,
+  list,
+  config,
+  totalGlobalPb,
+  logistics,
+  rawInputs,
+  savedProducts,
+  onRemoveSavedProduct,
+  onUpdate,
+  onRemove,
+  onAdd
+}) => {
+  const isAT = type === 'AT';
+  const isDAT = config.code === Incoterm.DAT;
+  const isCFR = config.code === Incoterm.CFR;
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-xl">
+      <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50/70 rounded-t-xl flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {isAT ? (
+            <TrendingUp className="w-4 h-4 text-emerald-700 shrink-0" />
+          ) : (
+            <Layers className="w-4 h-4 text-blue-900 shrink-0" />
+          )}
+          <h3 className="text-sm font-bold text-slate-900 truncate">{title}</h3>
+          <span className="text-xs text-slate-400 font-mono tabular-nums whitespace-nowrap">
+            · {list.length} {list.length > 1 ? 'articles' : 'article'}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onAdd(type)}
+          className={`px-3.5 py-2 rounded-lg text-xs font-semibold text-white flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+            isAT
+              ? 'bg-emerald-700 hover:bg-emerald-800'
+              : 'bg-blue-900 hover:bg-blue-800'
+          }`}
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Ajouter article
+        </button>
       </div>
-      <button 
-        onClick={() => addArticle(type)} 
-        className={`text-[10px] font-black flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white shadow-sm transition-transform active:scale-95 ${type === '023' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-      >
-        <Plus className="w-4 h-4" /> AJOUTER ARTICLE
-      </button>
-    </div>
-    <div className="p-4 space-y-2">
-      {list.map(art => (
-        <ArticleRow 
-          key={art.id} 
-          art={art} 
-          type={type} 
-          totalGlobalPb={totalGlobalPb}
-          logistics={logistics}
-          rawInputs={rawInputs}
-          isCFR={isCFR}
-          updateArticle={updateArticle}
-          removeArticle={removeArticle}
-        />
-      ))}
-    </div>
-  </div>
-);
+
+      <div className="divide-y divide-slate-100">
+        {list.map((art, idx) => {
+          const cvMAD = (art.valeurEUR || 0) * (logistics.tauxEurMad || 0);
+          const assuranceArt = cvMAD * ((logistics.assuranceTaux || 0) / 100);
+          const acconageArt =
+            config.showAcconage && totalGlobalPb > 0
+              ? (logistics.royaltiesMAD / totalGlobalPb) * (art.poidsBrut || 0)
+              : 0;
+          const vdDatPreview = cvMAD + assuranceArt;
+
+          return (
+            <div
+              key={art.id}
+              className="p-4 hover:bg-slate-50/60 transition-colors"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                <div className={isDAT ? 'md:col-span-4' : config.showFreight ? 'md:col-span-3' : 'md:col-span-4'}>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Désignation #{idx + 1}
+                  </label>
+                  <DesignationCombobox
+                    value={art.designation || ''}
+                    savedProducts={savedProducts}
+                    onChange={val => onUpdate(type, art.id, 'designation', val)}
+                    onRemoveSavedProduct={onRemoveSavedProduct}
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Valeur (€)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={rawInputs[`${type}-${art.id}-valeurEUR`] ?? (art.valeurEUR ? art.valeurEUR.toString() : '')}
+                    onChange={e => onUpdate(type, art.id, 'valeurEUR', e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono tabular-nums text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                    placeholder="0,00"
+                  />
+                </div>
+
+                {config.showFreight && (
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {isCFR ? 'Fret réf. (€)' : 'Fret (€)'}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={rawInputs[`${type}-${art.id}-fretEUR`] ?? (art.fretEUR ? art.fretEUR.toString() : '')}
+                      onChange={e => onUpdate(type, art.id, 'fretEUR', e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono tabular-nums text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                      placeholder="Auto"
+                    />
+                  </div>
+                )}
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    {config.weightLabel}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={rawInputs[`${type}-${art.id}-poidsBrut`] ?? (art.poidsBrut ? art.poidsBrut.toString() : '')}
+                    onChange={e => onUpdate(type, art.id, 'poidsBrut', e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono tabular-nums text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                    placeholder="0"
+                  />
+                </div>
+
+                {isDAT ? (
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Assurance {formatDecimal(logistics.assuranceTaux, 2)}% · VD Estimée
+                    </label>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-slate-700 flex items-center justify-between gap-2">
+                      <span>{formatDecimal(assuranceArt)} DH</span>
+                      <span className="font-semibold text-blue-900">{formatDecimal(vdDatPreview)} DH</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={config.showFreight ? 'md:col-span-2' : 'md:col-span-3'}>
+                    <label className="block text-xs font-medium text-emerald-700 mb-1">
+                      Acconage (DH)
+                    </label>
+                    <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg px-3 py-2 text-sm font-mono tabular-nums font-medium text-emerald-800 truncate">
+                      {formatDecimal(acconageArt)}
+                    </div>
+                  </div>
+                )}
+
+                <div className="md:col-span-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onRemove(type, art.id)}
+                    disabled={list.length <= 1}
+                    className="p-2 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded-lg transition-colors cursor-pointer"
+                    title="Supprimer l'article"
+                    aria-label="Supprimer l'article"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
 
 const App: React.FC = () => {
-  const DEFAULT_EUR_MAD = 10.85;
-  const INITIAL_ARTICLE = (id: number): Article => ({ id, designation: '', poidsBrut: 0, poidsNet: 0, valeurEUR: 0, fretEUR: 0 });
-
-  const [regime, setRegime] = useState<Regime>(Regime.ONLY_023);
-  const [incoterm, setIncoterm] = useState<Incoterm>(Incoterm.FOB);
-  const [logistics, setLogistics] = useState<GlobalLogistics>({
-    fretGlobalEUR: 0, 
-    fretGlobalMAD: 0, 
-    assuranceTaux: 0.5, 
-    royaltiesMAD: 2300, 
-    tauxEurMad: DEFAULT_EUR_MAD
+  const [activeIncoterm, setActiveIncoterm] = useState<Incoterm>(Incoterm.FOB);
+  const [activeRegimeByIncoterm, setActiveRegimeByIncoterm] = useState<Record<Incoterm, Regime>>({
+    [Incoterm.FOB]: Regime.ONLY_023,
+    [Incoterm.CFR]: Regime.ONLY_023,
+    [Incoterm.CIF]: Regime.ONLY_023,
+    [Incoterm.DAP]: Regime.ONLY_023,
+    [Incoterm.EXW]: Regime.ONLY_023,
+    [Incoterm.DAT]: Regime.ONLY_023
   });
 
-  const [articles023, setArticles023] = useState<Article[]>([INITIAL_ARTICLE(1)]);
-  const [articlesAT, setArticlesAT] = useState<Article[]>([INITIAL_ARTICLE(1)]);
+  const [tabStates, setTabStates] = useState<Record<Incoterm, Record<Regime, RegimeFormState>>>(() => ({
+    [Incoterm.FOB]: createInitialIncotermRegimes(Incoterm.FOB),
+    [Incoterm.CFR]: createInitialIncotermRegimes(Incoterm.CFR),
+    [Incoterm.CIF]: createInitialIncotermRegimes(Incoterm.CIF),
+    [Incoterm.DAP]: createInitialIncotermRegimes(Incoterm.DAP),
+    [Incoterm.EXW]: createInitialIncotermRegimes(Incoterm.EXW),
+    [Incoterm.DAT]: createInitialIncotermRegimes(Incoterm.DAT)
+  }));
 
-  const [rawInputs, setRawInputs] = useState<Record<string, string>>({
-    'log-tauxEurMad': DEFAULT_EUR_MAD.toString().replace('.', ','),
-    'log-royaltiesMAD': '2300',
-    'log-assuranceTaux': '0,5',
-    'log-fretGlobalEUR': '0',
-    'log-fretGlobalMAD': '0'
+  const [savedProducts, setSavedProducts] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_PRODUCTS_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+    } catch {
+      return [];
+    }
   });
 
-  const [result, setResult] = useState<CalculationResult | null>(null);
-  const [isCalculating, setIsCalculating] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SAVED_PRODUCTS_STORAGE_KEY, JSON.stringify(savedProducts));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [savedProducts]);
 
-  const isMixedMode = regime !== Regime.ONLY_023;
-  const isCFR = incoterm === Incoterm.CFR;
+  const activeRegime = activeRegimeByIncoterm[activeIncoterm];
+  const currentTab = tabStates[activeIncoterm][activeRegime];
+  const config = INCOTERM_CONFIGS[activeIncoterm];
+  const regimeConfig = REGIME_CONFIGS[activeRegime];
+  const { logistics, articles023, articlesAT, rawInputs, result } = currentTab;
+
+  const has023 = activeRegime !== Regime.ONLY_311;
+  const hasAT = activeRegime !== Regime.ONLY_023;
+  const isCFR = activeIncoterm === Incoterm.CFR;
+  const isDAT = activeIncoterm === Incoterm.DAT;
+  const isCIF = activeIncoterm === Incoterm.CIF;
 
   const totalGlobalPb = useMemo(() => {
-    const pb023 = articles023.reduce((sum, a) => sum + (a.poidsBrut || 0), 0);
-    const pbAT = isMixedMode ? articlesAT.reduce((sum, a) => sum + (a.poidsBrut || 0), 0) : 0;
+    const pb023 = has023 ? articles023.reduce((sum, a) => sum + (a.poidsBrut || 0), 0) : 0;
+    const pbAT = hasAT ? articlesAT.reduce((sum, a) => sum + (a.poidsBrut || 0), 0) : 0;
     return pb023 + pbAT;
-  }, [articles023, articlesAT, isMixedMode]);
+  }, [articles023, articlesAT, has023, hasAT]);
 
-  const handleCalculate = useCallback(() => {
-    setIsCalculating(true);
-    setTimeout(() => {
-      const res = calculateCustoms(articles023, regime, incoterm, logistics, articlesAT);
-      setResult(res);
-      setIsCalculating(false);
-    }, 400);
-  }, [articles023, articlesAT, regime, incoterm, logistics]);
+  const persistUsedDesignations = useCallback((items: Article[]) => {
+    const newNames = items
+      .map(item => (item.designation || '').trim())
+      .filter(name => name.length > 0);
+    if (newNames.length === 0) return;
 
-  const handleReset = useCallback(() => {
-    setArticles023([INITIAL_ARTICLE(1)]);
-    setArticlesAT([INITIAL_ARTICLE(1)]);
-    setLogistics({ 
-      fretGlobalEUR: 0, 
-      fretGlobalMAD: 0, 
-      assuranceTaux: 0.5, 
-      royaltiesMAD: 2300, 
-      tauxEurMad: DEFAULT_EUR_MAD 
+    setSavedProducts(prev => {
+      const merged = [...prev];
+      for (const name of newNames) {
+        const existingIdx = merged.findIndex(p => p.toLowerCase() === name.toLowerCase());
+        if (existingIdx !== -1) {
+          merged.splice(existingIdx, 1);
+        }
+        merged.unshift(name);
+      }
+      return merged;
     });
-    setRawInputs({ 
-      'log-tauxEurMad': DEFAULT_EUR_MAD.toString().replace('.', ','), 
-      'log-royaltiesMAD': '2300',
-      'log-assuranceTaux': '0,5',
-      'log-fretGlobalEUR': '0',
-      'log-fretGlobalMAD': '0'
-    });
-    setResult(null);
   }, []);
 
+  const handleRemoveSavedProduct = useCallback((product: string) => {
+    setSavedProducts(prev => prev.filter(p => p.toLowerCase() !== product.toLowerCase()));
+  }, []);
+
+  const updateRegimeState = useCallback(
+    (incoterm: Incoterm, regime: Regime, updater: (prev: RegimeFormState) => RegimeFormState) => {
+      setTabStates(prev => {
+        const nextRegimeState = updater(prev[incoterm][regime]);
+        if (nextRegimeState.result !== null) {
+          nextRegimeState.result = calculateCustoms(
+            nextRegimeState.articles023,
+            regime,
+            incoterm,
+            nextRegimeState.logistics,
+            nextRegimeState.articlesAT
+          );
+        }
+        return {
+          ...prev,
+          [incoterm]: {
+            ...prev[incoterm],
+            [regime]: nextRegimeState
+          }
+        };
+      });
+    },
+    []
+  );
+
+  const handleCalculate = useCallback(() => {
+    const activeArticles = [
+      ...(has023 ? currentTab.articles023 : []),
+      ...(hasAT ? currentTab.articlesAT : [])
+    ];
+    persistUsedDesignations(activeArticles);
+
+    setTabStates(prev => {
+      const tab = prev[activeIncoterm][activeRegime];
+      const calculated = calculateCustoms(
+        tab.articles023,
+        activeRegime,
+        activeIncoterm,
+        tab.logistics,
+        tab.articlesAT
+      );
+      return {
+        ...prev,
+        [activeIncoterm]: {
+          ...prev[activeIncoterm],
+          [activeRegime]: { ...tab, result: calculated }
+        }
+      };
+    });
+  }, [activeIncoterm, activeRegime, currentTab, has023, hasAT, persistUsedDesignations]);
+
+  const handleReset = useCallback(() => {
+    setTabStates(prev => ({
+      ...prev,
+      [activeIncoterm]: {
+        ...prev[activeIncoterm],
+        [activeRegime]: createInitialRegimeState(activeIncoterm)
+      }
+    }));
+  }, [activeIncoterm, activeRegime]);
+
+  const setActiveRegime = (nextRegime: Regime) => {
+    setActiveRegimeByIncoterm(prev => ({ ...prev, [activeIncoterm]: nextRegime }));
+  };
+
   const addArticle = (type: '023' | 'AT') => {
-    const list = type === '023' ? articles023 : articlesAT;
-    const setter = type === '023' ? setArticles023 : setArticlesAT;
-    const nextId = list.length > 0 ? Math.max(...list.map(a => a.id)) + 1 : 1;
-    setter([...list, INITIAL_ARTICLE(nextId)]);
+    updateRegimeState(activeIncoterm, activeRegime, prev => {
+      const list = type === '023' ? prev.articles023 : prev.articlesAT;
+      const nextId = list.length > 0 ? Math.max(...list.map(a => a.id)) + 1 : 1;
+      const updatedList = [...list, createInitialArticle(nextId)];
+      return type === '023'
+        ? { ...prev, articles023: updatedList }
+        : { ...prev, articlesAT: updatedList };
+    });
   };
 
   const removeArticle = (type: '023' | 'AT', id: number) => {
-    const list = type === '023' ? articles023 : articlesAT;
-    const setter = type === '023' ? setArticles023 : setArticlesAT;
-    if (list.length > 1) setter(list.filter(a => a.id !== id));
+    updateRegimeState(activeIncoterm, activeRegime, prev => {
+      const list = type === '023' ? prev.articles023 : prev.articlesAT;
+      if (list.length <= 1) return prev;
+      const updatedList = list.filter(a => a.id !== id);
+      return type === '023'
+        ? { ...prev, articles023: updatedList }
+        : { ...prev, articlesAT: updatedList };
+    });
   };
 
-  const updateArticle = (type: '023' | 'AT', id: number, field: keyof Article, value: string) => {
-    const list = type === '023' ? articles023 : articlesAT;
-    const setter = type === '023' ? setArticles023 : setArticlesAT;
+  const updateArticle = (
+    type: '023' | 'AT',
+    id: number,
+    field: keyof Article,
+    value: string
+  ) => {
     const inputKey = `${type}-${id}-${field}`;
+    updateRegimeState(activeIncoterm, activeRegime, prev => {
+      const list = type === '023' ? prev.articles023 : prev.articlesAT;
+      const nextRawInputs = { ...prev.rawInputs, [inputKey]: value };
+      const updatedList =
+        field === 'designation'
+          ? list.map(a => (a.id === id ? { ...a, designation: value } : a))
+          : list.map(a => (a.id === id ? { ...a, [field]: sanitizeNumericInput(value) } : a));
 
-    setRawInputs(prev => ({ ...prev, [inputKey]: value }));
-
-    if (field === 'designation') {
-      setter(list.map(a => a.id === id ? { ...a, [field]: value } : a));
-      return;
-    }
-
-    const num = sanitizeNumericInput(value);
-    setter(list.map(a => a.id === id ? { ...a, [field]: num } : a));
+      return type === '023'
+        ? { ...prev, rawInputs: nextRawInputs, articles023: updatedList }
+        : { ...prev, rawInputs: nextRawInputs, articlesAT: updatedList };
+    });
   };
 
   const updateLogistics = (field: keyof GlobalLogistics, rawValue: string) => {
     const inputKey = `log-${field}`;
     const val = sanitizeNumericInput(rawValue);
-    
-    setRawInputs(prev => {
-      const newInputs = { ...prev, [inputKey]: rawValue };
-      
-      setLogistics(current => {
-        const updated = { ...current, [field]: val };
-        
-        if (field === 'fretGlobalEUR') {
-          const madVal = Number((val * (current.tauxEurMad || 0)).toFixed(2));
-          updated.fretGlobalMAD = madVal;
-          newInputs['log-fretGlobalMAD'] = madVal.toString().replace('.', ',');
-        } else if (field === 'fretGlobalMAD') {
-          const eurVal = current.tauxEurMad > 0 ? Number((val / current.tauxEurMad).toFixed(2)) : 0;
-          updated.fretGlobalEUR = eurVal;
-          newInputs['log-fretGlobalEUR'] = eurVal.toString().replace('.', ',');
-        } else if (field === 'tauxEurMad') {
-          const madVal = Number(((current.fretGlobalEUR || 0) * val).toFixed(2));
-          updated.fretGlobalMAD = madVal;
-          newInputs['log-fretGlobalMAD'] = madVal.toString().replace('.', ',');
-        }
-        
-        return updated;
-      });
-      
-      return newInputs;
+
+    updateRegimeState(activeIncoterm, activeRegime, prev => {
+      const nextInputs = { ...prev.rawInputs, [inputKey]: rawValue };
+      const nextLogistics = { ...prev.logistics, [field]: val };
+
+      if (field === 'fretGlobalEUR') {
+        const madVal = Number((val * (prev.logistics.tauxEurMad || 0)).toFixed(2));
+        nextLogistics.fretGlobalMAD = madVal;
+        nextInputs['log-fretGlobalMAD'] = madVal.toString().replace('.', ',');
+      } else if (field === 'fretGlobalMAD') {
+        const eurVal =
+          prev.logistics.tauxEurMad > 0
+            ? Number((val / prev.logistics.tauxEurMad).toFixed(2))
+            : 0;
+        nextLogistics.fretGlobalEUR = eurVal;
+        nextInputs['log-fretGlobalEUR'] = eurVal.toString().replace('.', ',');
+      } else if (field === 'tauxEurMad') {
+        const madVal = Number(((prev.logistics.fretGlobalEUR || 0) * val).toFixed(2));
+        nextLogistics.fretGlobalMAD = madVal;
+        nextInputs['log-fretGlobalMAD'] = madVal.toString().replace('.', ',');
+      }
+
+      return {
+        ...prev,
+        rawInputs: nextInputs,
+        logistics: nextLogistics
+      };
     });
   };
 
+  const atLabelShort = activeRegime === Regime.MIXED_312 ? 'DUM 312 (AT)' : 'DUM 311 (AT)';
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-24 lg:pb-0">
-      <header className="bg-[#1e3a8a] text-white shadow-lg sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500 rounded-lg shadow-inner"><Calculator className="w-8 h-8 text-white" /></div>
-            <div>
-              <h1 className="text-xl font-black uppercase tracking-tight leading-none">Douane Maroc Calculator</h1>
-              <p className="text-[10px] text-blue-200 mt-1 font-bold tracking-widest opacity-80 uppercase">Designed & Developed by Abdellah</p>
-            </div>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+      {/* Top Bar Contract: clean single-row bar */}
+      <header className="bg-[#1e3a8a] text-white border-b border-blue-950/30 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-8">
+          <div className="flex items-center gap-3 whitespace-nowrap shrink-0">
+            <Calculator className="w-5 h-5 text-amber-400 shrink-0" />
+            <span className="text-base font-bold tracking-tight">
+              Douane Maroc Calculator
+            </span>
+          </div>
+
+          <nav
+            aria-label="Incoterms"
+            className="hidden lg:flex items-center gap-6 text-sm font-medium text-blue-100"
+          >
+            {INCOTERM_ORDER.map(inc => (
+              <button
+                key={inc}
+                type="button"
+                onClick={() => setActiveIncoterm(inc)}
+                className={`py-1 border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeIncoterm === inc
+                    ? 'border-amber-400 text-white font-semibold'
+                    : 'border-transparent text-blue-200 hover:text-white'
+                }`}
+              >
+                {inc}
+              </button>
+            ))}
+          </nav>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => result && generatePDFReport(result, activeRegime, activeIncoterm)}
+              disabled={!result}
+              className="px-4 py-2 text-xs font-semibold rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-400 disabled:opacity-40 disabled:pointer-events-none transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <FileDown className="w-4 h-4" />
+              Exporter PDF
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8 space-y-8">
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 bg-slate-50 border-b flex items-center gap-3">
-              <Settings className="w-5 h-5 text-slate-600" />
-              <h2 className="text-sm font-black uppercase text-slate-900 tracking-widest">Paramètres Généraux</h2>
+      <main className="max-w-7xl w-full mx-auto px-6 py-8 flex-1 space-y-6">
+        {/* Level 1: Incoterm Tabs + Level 2: Régime Douanier Sub-Tabs under each Incoterm */}
+        <section aria-label="Sélection de l'Incoterm et du Régime" className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div>
+              <h1 className="text-lg font-bold text-slate-900">
+                {config.code} ({config.label}) · {regimeConfig.label}
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {config.description}
+              </p>
             </div>
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <Globe className="w-3 h-3" /> Incoterm
-                  </label>
-                  <select value={incoterm} onChange={e => setIncoterm(e.target.value as Incoterm)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 font-bold focus:border-blue-600 outline-none appearance-none cursor-pointer">
-                    {Object.values(Incoterm).map(i => <option key={i} value={i}>{i}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <LayoutDashboard className="w-3 h-3" /> Régime Douanier
-                  </label>
-                  <select value={regime} onChange={e => setRegime(e.target.value as Regime)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 font-bold focus:border-blue-600 outline-none font-mono cursor-pointer">
-                    <option value={Regime.ONLY_023}>DUM 023 (Unique)</option>
-                    <option value={Regime.MIXED_312}>023 + 312 (AT)</option>
-                    <option value={Regime.MIXED_311}>023 + 311 (AT)</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <Coins className="w-3 h-3" /> Taux EUR/MAD
-                  </label>
-                  <input type="text" value={rawInputs['log-tauxEurMad']} onChange={e => updateLogistics('tauxEurMad', e.target.value)} className="w-full bg-amber-50/30 border-2 border-amber-100 rounded-2xl px-4 py-3 font-bold text-amber-700 outline-none focus:border-amber-500" placeholder="0" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <Truck className="w-3 h-3 text-blue-500" /> Fret Global (€)
-                  </label>
-                  <input type="text" value={rawInputs['log-fretGlobalEUR']} onChange={e => updateLogistics('fretGlobalEUR', e.target.value)} className="w-full bg-blue-50/20 border-2 border-blue-100 rounded-2xl px-4 py-3 font-bold text-blue-800 outline-none focus:border-blue-500" placeholder="0" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <Truck className="w-3 h-3 text-blue-600" /> Fret Global (MAD)
-                  </label>
-                  <input type="text" value={rawInputs['log-fretGlobalMAD']} onChange={e => updateLogistics('fretGlobalMAD', e.target.value)} className="w-full bg-blue-50/40 border-2 border-blue-200 rounded-2xl px-4 py-3 font-bold text-blue-900 outline-none focus:border-blue-600" placeholder="0" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <Package className="w-3 h-3" /> Acconage Global (MAD)
-                  </label>
-                  <input type="text" value={rawInputs['log-royaltiesMAD']} onChange={e => updateLogistics('royaltiesMAD', e.target.value)} className="w-full bg-emerald-50/30 border-2 border-emerald-100 rounded-2xl px-4 py-3 font-bold text-emerald-900 outline-none focus:border-emerald-500" placeholder="0" />
-                </div>
-              </div>
+            <div className="text-xs font-mono text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              {config.formula}
             </div>
           </div>
 
-          <div className="space-y-6">
-            {isCFR && (
-              <div className="bg-amber-500 text-white text-[10px] font-black px-6 py-2.5 rounded-2xl shadow-md flex items-center gap-2 animate-pulse uppercase tracking-[0.1em] w-fit mx-auto">
-                <Info className="w-4 h-4" /> Mode CFR Actif : Le fret est considéré inclus dans la valeur et est exclu du calcul VD.
-              </div>
-            )}
-            
-            <InventoryCard 
-              type="023" 
-              title={isMixedMode ? (isCFR ? "Inventaire DUM 023" : "Inventaire DUM 023 (Consommation)") : "Inventaire Articles (DUM 023)"} 
-              list={articles023} 
-              icon={LayoutDashboard} 
-              isMixedMode={isMixedMode}
-              isCFR={isCFR}
-              totalGlobalPb={totalGlobalPb}
-              logistics={logistics}
-              rawInputs={rawInputs}
-              updateArticle={updateArticle}
-              removeArticle={removeArticle}
-              addArticle={addArticle}
-            />
+          {/* Incoterm Tab Bar */}
+          <div
+            role="tablist"
+            aria-label="Onglets Incoterms"
+            className="grid grid-cols-3 sm:grid-cols-6 gap-2"
+          >
+            {INCOTERM_ORDER.map(inc => {
+              const item = INCOTERM_CONFIGS[inc];
+              const isSelected = activeIncoterm === inc;
+              const anyResultInIncoterm = REGIME_ORDER.some(
+                reg => tabStates[inc][reg].result !== null
+              );
+              return (
+                <button
+                  key={inc}
+                  role="tab"
+                  type="button"
+                  aria-selected={isSelected}
+                  onClick={() => setActiveIncoterm(inc)}
+                  className={`px-3 py-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#1e3a8a] text-white border-[#1e3a8a]'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-sm font-bold tracking-tight whitespace-nowrap">
+                      {item.code}
+                    </span>
+                    {anyResultInIncoterm && (
+                      <span
+                        className={`text-[11px] font-mono ${
+                          isSelected ? 'text-amber-300' : 'text-emerald-700'
+                        }`}
+                      >
+                        OK
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className={`text-xs truncate mt-0.5 ${
+                      isSelected ? 'text-blue-200' : 'text-slate-500'
+                    }`}
+                  >
+                    {item.label}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-            {isMixedMode && (
-              <InventoryCard 
-                type="AT" 
-                title={`Inventaire DUM AT (${regime === Regime.MIXED_311 ? '311' : '312'})`} 
-                list={articlesAT} 
-                icon={TrendingUp} 
-                isMixedMode={isMixedMode}
-                isCFR={isCFR}
+          {/* Régime Douanier Sub-Tabs under active Incoterm */}
+          <div className="pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-700">
+                Régime Douanier — {activeIncoterm}
+              </span>
+              <span className="text-xs text-slate-400">
+                {regimeConfig.subtitle}
+              </span>
+            </div>
+            <div
+              role="tablist"
+              aria-label={`Régimes douaniers pour ${activeIncoterm}`}
+              className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+            >
+              {REGIME_ORDER.map(reg => {
+                const regMeta = REGIME_CONFIGS[reg];
+                const isSelected = activeRegime === reg;
+                const hasRegResult = tabStates[activeIncoterm][reg].result !== null;
+                return (
+                  <button
+                    key={reg}
+                    role="tab"
+                    type="button"
+                    aria-selected={isSelected}
+                    onClick={() => setActiveRegime(reg)}
+                    className={`px-3 py-2 rounded-lg border text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold whitespace-nowrap">
+                        {regMeta.label}
+                      </span>
+                      {hasRegResult && (
+                        <span
+                          className={`text-[10px] font-mono ${
+                            isSelected ? 'text-amber-300' : 'text-emerald-700'
+                          }`}
+                        >
+                          OK
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`text-[11px] truncate mt-0.5 ${
+                        isSelected ? 'text-slate-300' : 'text-slate-500'
+                      }`}
+                    >
+                      {regMeta.subtitle}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* Active Incoterm + Régime Calculation Form & Result Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <div className="lg:col-span-8 space-y-6">
+            {/* Form Parameters tailored to active Incoterm & Régime */}
+            <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between">
+                <h2 className="text-sm font-bold text-slate-900">
+                  Paramètres de calcul — {activeIncoterm} · {regimeConfig.label}
+                </h2>
+                <span className="text-xs text-slate-500">
+                  Taux · Frais applicables
+                </span>
+              </div>
+
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <label
+                    htmlFor={`taux-${activeIncoterm}-${activeRegime}`}
+                    className="block text-xs font-medium text-slate-600 mb-1.5"
+                  >
+                    Taux de change (EUR / MAD)
+                  </label>
+                  <input
+                    id={`taux-${activeIncoterm}-${activeRegime}`}
+                    type="text"
+                    inputMode="decimal"
+                    value={rawInputs['log-tauxEurMad'] ?? ''}
+                    onChange={e => updateLogistics('tauxEurMad', e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono tabular-nums font-semibold text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                    placeholder="10,85"
+                  />
+                </div>
+
+                {config.showAssurance && (
+                  <div>
+                    <label
+                      htmlFor={`assurance-${activeIncoterm}-${activeRegime}`}
+                      className="block text-xs font-medium text-slate-600 mb-1.5"
+                    >
+                      Taux Assurance (%)
+                    </label>
+                    <input
+                      id={`assurance-${activeIncoterm}-${activeRegime}`}
+                      type="text"
+                      inputMode="decimal"
+                      value={rawInputs['log-assuranceTaux'] ?? ''}
+                      onChange={e => updateLogistics('assuranceTaux', e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono tabular-nums font-semibold text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                      placeholder="0,5"
+                    />
+                  </div>
+                )}
+
+                {config.showAcconage && (
+                  <div>
+                    <label
+                      htmlFor={`acconage-${activeIncoterm}-${activeRegime}`}
+                      className="block text-xs font-medium text-slate-600 mb-1.5"
+                    >
+                      Acconage Global (MAD)
+                    </label>
+                    <input
+                      id={`acconage-${activeIncoterm}-${activeRegime}`}
+                      type="text"
+                      inputMode="decimal"
+                      value={rawInputs['log-royaltiesMAD'] ?? ''}
+                      onChange={e => updateLogistics('royaltiesMAD', e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono tabular-nums font-semibold text-emerald-800 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                      placeholder="2300"
+                    />
+                  </div>
+                )}
+
+                {config.showFreight && (
+                  <>
+                    <div>
+                      <label
+                        htmlFor={`fretEur-${activeIncoterm}-${activeRegime}`}
+                        className="block text-xs font-medium text-slate-600 mb-1.5"
+                      >
+                        {isCFR ? 'Fret Global réf. (€)' : 'Fret Global (€)'}
+                      </label>
+                      <input
+                        id={`fretEur-${activeIncoterm}-${activeRegime}`}
+                        type="text"
+                        inputMode="decimal"
+                        value={rawInputs['log-fretGlobalEUR'] ?? ''}
+                        onChange={e => updateLogistics('fretGlobalEUR', e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono tabular-nums text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                        placeholder="0"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor={`fretMad-${activeIncoterm}-${activeRegime}`}
+                        className="block text-xs font-medium text-slate-600 mb-1.5"
+                      >
+                        {isCFR ? 'Fret Global réf. (MAD)' : 'Fret Global (MAD)'}
+                      </label>
+                      <input
+                        id={`fretMad-${activeIncoterm}-${activeRegime}`}
+                        type="text"
+                        inputMode="decimal"
+                        value={rawInputs['log-fretGlobalMAD'] ?? ''}
+                        onChange={e => updateLogistics('fretGlobalMAD', e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono tabular-nums text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                        placeholder="0"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {isCFR && (
+                <div className="px-5 py-3 bg-amber-50 border-t border-amber-200/80 text-xs text-amber-900 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>
+                    Mode CFR : le fret est déjà inclus dans la valeur marchandise et est exclu du calcul de la Valeur en Douane.
+                  </span>
+                </div>
+              )}
+
+              {isCIF && (
+                <div className="px-5 py-3 bg-blue-50 border-t border-blue-200/80 text-xs text-blue-900 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-blue-700 shrink-0" />
+                  <span>
+                    Mode CIF : le fret et l’assurance sont inclus dans la facture (taux assurance à 0% par défaut). Seul l’acconage est ajouté.
+                  </span>
+                </div>
+              )}
+
+              {isDAT && (
+                <div className="px-5 py-3 bg-emerald-50 border-t border-emerald-200/80 text-xs text-emerald-900 flex items-center gap-2">
+                  <Package className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>
+                    Mode DAT : calcul direct (Valeur € × Taux) + Assurance ({formatDecimal(logistics.assuranceTaux, 2)}%). Aucun fret ni acconage appliqué.
+                  </span>
+                </div>
+              )}
+            </section>
+
+            {/* Articles Tables based on active Régime */}
+            {has023 && (
+              <ArticleTableCard
+                type="023"
+                title={hasAT ? 'Inventaire DUM 023 (Consommation)' : 'Inventaire Articles (DUM 023)'}
+                list={articles023}
+                config={config}
                 totalGlobalPb={totalGlobalPb}
                 logistics={logistics}
                 rawInputs={rawInputs}
-                updateArticle={updateArticle}
-                removeArticle={removeArticle}
-                addArticle={addArticle}
+                savedProducts={savedProducts}
+                onRemoveSavedProduct={handleRemoveSavedProduct}
+                onUpdate={updateArticle}
+                onRemove={removeArticle}
+                onAdd={addArticle}
               />
             )}
+
+            {hasAT && (
+              <ArticleTableCard
+                type="AT"
+                title={
+                  activeRegime === Regime.ONLY_311
+                    ? 'Inventaire Articles — DUM 311 (AT seule)'
+                    : `Inventaire ${atLabelShort}`
+                }
+                list={articlesAT}
+                config={config}
+                totalGlobalPb={totalGlobalPb}
+                logistics={logistics}
+                rawInputs={rawInputs}
+                savedProducts={savedProducts}
+                onRemoveSavedProduct={handleRemoveSavedProduct}
+                onUpdate={updateArticle}
+                onRemove={removeArticle}
+                onAdd={addArticle}
+              />
+            )}
+
+            {/* Primary Actions */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={handleCalculate}
+                className="flex-1 py-3.5 px-6 rounded-xl font-bold text-white bg-[#1e3a8a] hover:bg-blue-800 transition-colors flex items-center justify-center gap-2.5 text-sm cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-white" />
+                Calculer la Valeur en Douane ({activeIncoterm} · {regimeConfig.label})
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="px-5 py-3.5 rounded-xl font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 text-sm cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Réinitialiser
+              </button>
+            </div>
           </div>
 
-          <div className="flex gap-4">
-            <button 
-              onClick={handleCalculate} 
-              disabled={isCalculating} 
-              className={`flex-1 py-5 rounded-[2rem] font-black text-white flex items-center justify-center gap-4 transition-all shadow-xl text-xl uppercase tracking-widest ${isCalculating ? 'bg-slate-400' : 'bg-[#1e3a8a] hover:bg-blue-800 active:scale-[0.98]'}`}
-            >
-              {isCalculating ? <div className="w-6 h-6 border-4 border-t-transparent rounded-full animate-spin" /> : <Play className="w-6 h-6 fill-white" />}
-              Calculer la Valeur en Douane
-            </button>
-            <button 
-              onClick={handleReset} 
-              className="px-8 py-5 rounded-[2rem] font-black text-rose-600 bg-rose-50 border-2 border-rose-100 hover:bg-rose-100 transition-all flex items-center justify-center gap-3 uppercase tracking-widest shadow-lg active:scale-95"
-              title="Réinitialiser à zéro"
-            >
-              <RotateCcw className="w-6 h-6" /> RESET
-            </button>
-          </div>
-        </div>
-
-        <div className="lg:col-span-4 space-y-6">
-          <div className="sticky top-28 space-y-6">
-            <div className={`bg-gradient-to-br from-[#1e3a8a] to-blue-900 rounded-[2.5rem] p-8 text-white shadow-2xl border-4 border-amber-500/20 transition-all ${!result ? 'opacity-50 grayscale' : 'opacity-100'}`}>
-              <span className="text-blue-300 text-[11px] font-black uppercase tracking-widest block mb-1">RÉSULTAT VD TOTAL</span>
-              <div className="text-4xl font-black text-amber-400 mb-6 drop-shadow-md">
-                {result ? formatCurrency(result.totalValeurDouane) : "---,--- DH"}
+          {/* Sticky Calculation Summary Sidebar */}
+          <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-24">
+            <div className="bg-[#1e3a8a] text-white rounded-xl p-6 border border-blue-950/20">
+              <div className="flex items-center justify-between text-xs text-blue-200 mb-1">
+                <span>Total Valeur en Douane</span>
+                <span className="font-mono">{activeIncoterm} · {activeRegime}</span>
               </div>
-              <div className="space-y-4 pt-4 border-t border-white/10">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="opacity-60 font-bold uppercase">DUM 023</span>
-                  <span className="font-black text-blue-100">{result ? formatCurrency(result.regime023.valeurDouaneTotal) : "0 DH"}</span>
+              <div className="text-3xl font-bold font-mono tabular-nums text-amber-400 mt-1 mb-5">
+                {result ? formatCurrency(result.totalValeurDouane) : '---,-- DH'}
+              </div>
+
+              <div className="space-y-2.5 pt-4 border-t border-white/15 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-blue-200">Contre-Valeur (MAD)</span>
+                  <span className="font-mono tabular-nums font-semibold">
+                    {result ? formatCurrency(result.totalValeurMAD) : '0,00 MAD'}
+                  </span>
                 </div>
-                {result?.regimeSecondary && (
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="opacity-60 font-bold uppercase">DUM AT</span>
-                    <span className="font-black text-emerald-300">{formatCurrency(result.regimeSecondary.valeurDouaneTotal)}</span>
+
+                {!isDAT && !isCIF && !isCFR && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-blue-200">Fret Total (MAD)</span>
+                    <span className="font-mono tabular-nums font-semibold">
+                      {result ? formatCurrency(result.totalFretMAD) : '0,00 MAD'}
+                    </span>
                   </div>
                 )}
-                <div className="flex justify-between items-center text-xs pt-2 border-t border-white/10 opacity-60">
-                  <span className="font-black uppercase tracking-tighter">POIDS BRUT GLOBAL</span>
-                  <span className="font-black">{totalGlobalPb} KG</span>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-blue-200">
+                    Assurance ({formatDecimal(logistics.assuranceTaux, 2)}%)
+                  </span>
+                  <span className="font-mono tabular-nums font-semibold">
+                    {result ? formatCurrency(result.totalAssuranceMAD) : '0,00 MAD'}
+                  </span>
+                </div>
+
+                {!isDAT && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-blue-200">Acconage (MAD)</span>
+                    <span className="font-mono tabular-nums font-semibold">
+                      {result ? formatCurrency(result.totalRoyaltiesMAD) : '0,00 MAD'}
+                    </span>
+                  </div>
+                )}
+
+                <div className="pt-2.5 border-t border-white/15 space-y-2">
+                  {has023 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-blue-100 font-medium">DUM 023</span>
+                      <span className="font-mono tabular-nums font-bold">
+                        {result?.regime023 ? formatCurrency(result.regime023.valeurDouaneTotal) : '0,00 MAD'}
+                      </span>
+                    </div>
+                  )}
+
+                  {hasAT && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-emerald-200 font-medium">{atLabelShort}</span>
+                      <span className="font-mono tabular-nums font-bold text-emerald-300">
+                        {result?.regimeAT ? formatCurrency(result.regimeAT.valeurDouaneTotal) : '0,00 MAD'}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center text-blue-200 pt-1">
+                    <span>{isCFR ? 'Poids Net Global' : 'Poids Brut Global'}</span>
+                    <span className="font-mono tabular-nums font-semibold">
+                      {formatDecimal(totalGlobalPb, 2)} KG
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <button 
-              onClick={() => result && generatePDFReport(result, regime, incoterm)} 
+            <button
+              type="button"
+              onClick={() => result && generatePDFReport(result, activeRegime, activeIncoterm)}
               disabled={!result}
-              className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-black transition-all uppercase text-sm shadow-lg ${!result ? 'bg-slate-300 text-slate-500 opacity-50 cursor-not-allowed' : 'bg-amber-500 text-white hover:bg-amber-600 active:scale-95'}`}
+              className="w-full py-3.5 px-5 rounded-xl font-bold text-sm flex items-center justify-center gap-2.5 bg-amber-500 text-slate-950 hover:bg-amber-400 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
-              <FileDown className="w-6 h-6" /> Rapport PDF Professionnel
+              <FileDown className="w-4 h-4" />
+              Rapport PDF Professionnel
             </button>
 
-            <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 flex gap-4">
-              <AlertCircle className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-              <div className="text-[11px] text-blue-800 font-medium leading-relaxed">
-                {isCFR 
-                  ? "Note CFR: Le fret n'est pas rajouté à la VD (déjà inclus). Entrez le fret par article s'il diffère du pro-rata standard."
-                  : "Vous pouvez spécifier le fret par article. Si laissé à 0, le système utilise automatiquement le fret global pro-raté par poids brut."}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 text-xs text-slate-600 leading-relaxed space-y-1.5">
+              <div className="font-semibold text-slate-900">
+                {activeIncoterm} · {regimeConfig.label}
               </div>
+              <p>{config.description}</p>
+              <p className="text-slate-500">
+                Produits mémorisés : {savedProducts.length} (enregistrés automatiquement à chaque calcul).
+              </p>
             </div>
-          </div>
+          </aside>
         </div>
       </main>
 
-      <footer className="max-w-7xl mx-auto px-4 py-12 text-center text-slate-400">
-        <p className="text-[10px] font-black uppercase tracking-[0.5em]">© 2026 Abdellah – All Rights Reserved</p>
+      <footer className="max-w-7xl w-full mx-auto px-6 py-8 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+        <span>© 2026 Abdellah — All Rights Reserved</span>
+        <span>Designed &amp; Developed by Abdellah</span>
       </footer>
     </div>
   );

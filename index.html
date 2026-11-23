@@ -3,31 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculateur Douane Maroc Pro</title>
+    <title>Douane Maroc Calculator Designed & Developed by Abdellah</title>
+    <meta name="description" content="Calculateur professionnel de Valeur en Douane Maroc par Incoterm (FOB, CFR, CIF, DAP, EXW, DAT) et régime douanier (DUM 023, 311, 312) avec export PDF.">
+    <meta property="og:title" content="Douane Maroc Calculator Designed & Developed by Abdellah">
+    <meta property="og:description" content="Calculateur professionnel de Valeur en Douane Maroc par Incoterm et régime douanier avec export PDF.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Define process.env for browser compatibility if not handled by build tool -->
     <script>
-      window.process = { env: { } };
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace'],
+            },
+          },
+        },
+      };
     </script>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom": "https://esm.sh/react-dom@^19.2.4",
-    "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
-    "jspdf": "https://esm.sh/jspdf@^4.1.0",
-    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/"
-  }
-}
-</script>
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-50 text-slate-900 antialiased">
     <div id="root"></div>
-    <!-- Explicitly load the index.tsx entry point -->
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>
