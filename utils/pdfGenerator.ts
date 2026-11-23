@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { CalculationResult, Regime, Incoterm, ArticleResult } from '../types';
-import { formatDecimal } from './calculations';
+import { formatDecimal, formatRounded } from './calculations';
 
 export const generatePDFReport = (
   result: CalculationResult,
@@ -13,9 +13,10 @@ export const generatePDFReport = (
   const emeraldGreen: [number, number, number] = [5, 150, 105];
   const slateDark: [number, number, number] = [30, 41, 59];
 
-  const fmtMAD = (val: number) => `${formatDecimal(val, 2)} DH`;
+  const fmtMAD = (val: number) => `${formatRounded(val)} DH`;
+  const fmtMADNum = (val: number) => formatRounded(val);
   const fmtEUR = (val: number) => `${formatDecimal(val, 2)} €`;
-  const fmtKG = (val: number) => `${formatDecimal(val, 2)} KG`;
+  const fmtKG = (val: number) => `${formatRounded(val)} KG`;
 
   const has023 = !!result.regime023;
   const hasAT = !!result.regimeAT;
@@ -27,6 +28,29 @@ export const generatePDFReport = (
   let atDUMName = 'DUM AT';
   if (regime === Regime.ONLY_311 || regime === Regime.MIXED_311) atDUMName = 'DUM 311 (AT)';
   if (regime === Regime.MIXED_312) atDUMName = 'DUM 312 EMBALLAGE';
+
+  // Ensure exact reconciliation between rounded DUM columns and TOTAL GÉNÉRAL
+  const r023 = result.regime023;
+  const rAT = result.regimeAT;
+
+  const totalCVRounded = isMixed
+    ? Math.round(r023!.valeurMAD) + Math.round(rAT!.valeurMAD)
+    : Math.round(result.totalValeurMAD);
+  const totalFretRounded = isMixed
+    ? Math.round(r023!.fretMAD) + Math.round(rAT!.fretMAD)
+    : Math.round(result.totalFretMAD);
+  const totalAssuranceRounded = isMixed
+    ? Math.round(r023!.assuranceMAD) + Math.round(rAT!.assuranceMAD)
+    : Math.round(result.totalAssuranceMAD);
+  const totalRoyaltiesRounded = isMixed
+    ? Math.round(r023!.royaltiesMAD) + Math.round(rAT!.royaltiesMAD)
+    : Math.round(result.totalRoyaltiesMAD);
+  const totalVDRounded = isMixed
+    ? Math.round(r023!.valeurDouaneTotal) + Math.round(rAT!.valeurDouaneTotal)
+    : Math.round(result.totalValeurDouane);
+  const totalPoidsRounded = isMixed
+    ? Math.round(r023!.poidsBrut) + Math.round(rAT!.poidsBrut)
+    : Math.round(result.totalPoidsBrut);
 
   // Header Section
   doc.setFillColor(...navyBlue);
@@ -89,21 +113,21 @@ export const generatePDFReport = (
   const rows: any[] = [
     makeSummaryRow(
       'Valeur Marchandise (EUR)',
-      has023 ? fmtEUR(result.regime023!.valeurEUR) : '',
-      hasAT ? fmtEUR(result.regimeAT!.valeurEUR) : '',
+      has023 ? fmtEUR(r023!.valeurEUR) : '',
+      hasAT ? fmtEUR(rAT!.valeurEUR) : '',
       fmtEUR(result.totalValeurEUR)
     ),
     makeSummaryRow(
       'Contre-Valeur (MAD)',
-      has023 ? fmtMAD(result.regime023!.valeurMAD) : '',
-      hasAT ? fmtMAD(result.regimeAT!.valeurMAD) : '',
-      fmtMAD(result.totalValeurMAD)
+      has023 ? fmtMAD(r023!.valeurMAD) : '',
+      hasAT ? fmtMAD(rAT!.valeurMAD) : '',
+      fmtMAD(totalCVRounded)
     ),
     makeSummaryRow(
       isCFR ? 'Poids Net (KG)' : 'Poids Brut (KG)',
-      has023 ? fmtKG(result.regime023!.poidsBrut) : '',
-      hasAT ? fmtKG(result.regimeAT!.poidsBrut) : '',
-      fmtKG(result.totalPoidsBrut)
+      has023 ? fmtKG(r023!.poidsBrut) : '',
+      hasAT ? fmtKG(rAT!.poidsBrut) : '',
+      fmtKG(totalPoidsRounded)
     )
   ];
 
@@ -111,9 +135,9 @@ export const generatePDFReport = (
     rows.push(
       makeSummaryRow(
         fretLabel,
-        has023 ? fmtMAD(result.regime023!.fretMAD) : '',
-        hasAT ? fmtMAD(result.regimeAT!.fretMAD) : '',
-        fmtMAD(result.totalFretMAD)
+        has023 ? fmtMAD(r023!.fretMAD) : '',
+        hasAT ? fmtMAD(rAT!.fretMAD) : '',
+        fmtMAD(totalFretRounded)
       )
     );
   }
@@ -121,9 +145,9 @@ export const generatePDFReport = (
   rows.push(
     makeSummaryRow(
       `Assurance (${formatDecimal(result.assuranceTaux, 2)}%)`,
-      has023 ? fmtMAD(result.regime023!.assuranceMAD) : '',
-      hasAT ? fmtMAD(result.regimeAT!.assuranceMAD) : '',
-      fmtMAD(result.totalAssuranceMAD)
+      has023 ? fmtMAD(r023!.assuranceMAD) : '',
+      hasAT ? fmtMAD(rAT!.assuranceMAD) : '',
+      fmtMAD(totalAssuranceRounded)
     )
   );
 
@@ -131,26 +155,26 @@ export const generatePDFReport = (
     rows.push(
       makeSummaryRow(
         'Acconage (MAD)',
-        has023 ? fmtMAD(result.regime023!.royaltiesMAD) : '',
-        hasAT ? fmtMAD(result.regimeAT!.royaltiesMAD) : '',
-        fmtMAD(result.totalRoyaltiesMAD)
+        has023 ? fmtMAD(r023!.royaltiesMAD) : '',
+        hasAT ? fmtMAD(rAT!.royaltiesMAD) : '',
+        fmtMAD(totalRoyaltiesRounded)
       )
     );
   }
 
   const totalCell = {
-    content: fmtMAD(result.totalValeurDouane),
+    content: fmtMAD(totalVDRounded),
     styles: { fontStyle: 'bold', fillColor: [254, 243, 199], textColor: [146, 64, 14] }
   };
   const cell023 = has023
     ? {
-        content: fmtMAD(result.regime023!.valeurDouaneTotal),
+        content: fmtMAD(r023!.valeurDouaneTotal),
         styles: { fontStyle: 'bold', fillColor: [239, 246, 255], textColor: navyBlue }
       }
     : null;
   const cellAT = hasAT
     ? {
-        content: fmtMAD(result.regimeAT!.valeurDouaneTotal),
+        content: fmtMAD(rAT!.valeurDouaneTotal),
         styles: { fontStyle: 'bold', fillColor: [236, 253, 245], textColor: emeraldGreen }
       }
     : null;
@@ -199,7 +223,7 @@ export const generatePDFReport = (
     }
   });
 
-  // Helper function to render article tables with exact TOTAL footer row
+  // Helper function to render article tables with rounded MAD values and TOTAL footer row
   const renderArticleTable = (
     title: string,
     articles: ArticleResult[],
@@ -231,31 +255,31 @@ export const generatePDFReport = (
         `#${art.id}`,
         art.designation,
         formatDecimal(art.valeurEUR, 2),
-        formatDecimal(art.contreValeurMAD, 2)
+        fmtMADNum(art.contreValeurMAD)
       ];
-      if (showFretCol) r.push(formatDecimal(art.fretProRataMAD, 2));
-      r.push(formatDecimal(art.assuranceMAD, 2));
-      if (showAcconageCol) r.push(formatDecimal(art.partRoyaltiesMAD, 2));
-      r.push(formatDecimal(art.valeurDouaneArticle, 2));
+      if (showFretCol) r.push(fmtMADNum(art.fretProRataMAD));
+      r.push(fmtMADNum(art.assuranceMAD));
+      if (showAcconageCol) r.push(fmtMADNum(art.partRoyaltiesMAD));
+      r.push(fmtMADNum(art.valeurDouaneArticle));
       return r;
     });
 
     const sumEUR = articles.reduce((s, a) => s + a.valeurEUR, 0);
-    const sumCV = articles.reduce((s, a) => s + a.contreValeurMAD, 0);
-    const sumFret = articles.reduce((s, a) => s + a.fretProRataMAD, 0);
-    const sumAssur = articles.reduce((s, a) => s + a.assuranceMAD, 0);
-    const sumAcc = articles.reduce((s, a) => s + a.partRoyaltiesMAD, 0);
-    const sumVD = articles.reduce((s, a) => s + a.valeurDouaneArticle, 0);
+    const sumCV = articles.reduce((s, a) => s + Math.round(a.contreValeurMAD), 0);
+    const sumFret = articles.reduce((s, a) => s + Math.round(a.fretProRataMAD), 0);
+    const sumAssur = articles.reduce((s, a) => s + Math.round(a.assuranceMAD), 0);
+    const sumAcc = articles.reduce((s, a) => s + Math.round(a.partRoyaltiesMAD), 0);
+    const sumVD = articles.reduce((s, a) => s + Math.round(a.valeurDouaneArticle), 0);
 
     const footRow: string[] = [
       '',
       'TOTAL',
       formatDecimal(sumEUR, 2),
-      formatDecimal(sumCV, 2)
+      fmtMADNum(sumCV)
     ];
-    if (showFretCol) footRow.push(formatDecimal(sumFret, 2));
-    footRow.push(formatDecimal(sumAssur, 2));
-    if (showAcconageCol) footRow.push(formatDecimal(sumAcc, 2));
+    if (showFretCol) footRow.push(fmtMADNum(sumFret));
+    footRow.push(fmtMADNum(sumAssur));
+    if (showAcconageCol) footRow.push(fmtMADNum(sumAcc));
     footRow.push(fmtMAD(sumVD));
 
     autoTable(doc, {
@@ -325,15 +349,15 @@ export const generatePDFReport = (
     `Incoterm ${incoterm}`,
     `Régime ${regime}`,
     `Marchandise: ${fmtEUR(result.totalValeurEUR)}`,
-    `Assurance: ${fmtMAD(result.totalAssuranceMAD)}`
+    `Assurance: ${fmtMAD(totalAssuranceRounded)}`
   ];
-  if (!isDAT) metaParts.push(`Acconage: ${fmtMAD(result.totalRoyaltiesMAD)}`);
+  if (!isDAT) metaParts.push(`Acconage: ${fmtMAD(totalRoyaltiesRounded)}`);
   doc.text(metaParts.join('  ·  '), 20, yPos + 15);
 
   doc.setTextColor(...navyBlue);
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text(fmtMAD(result.totalValeurDouane), 190, yPos + 12.5, { align: 'right' });
+  doc.text(fmtMAD(totalVDRounded), 190, yPos + 12.5, { align: 'right' });
 
   // Footer / Page numbers
   const pageCount = doc.getNumberOfPages();

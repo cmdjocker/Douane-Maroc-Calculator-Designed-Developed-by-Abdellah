@@ -24,11 +24,21 @@ import {
   calculateCustoms,
   formatCurrency,
   formatDecimal,
+  formatRounded,
   sanitizeNumericInput
 } from './utils/calculations';
 import { generatePDFReport } from './utils/pdfGenerator';
 import { DesignationCombobox } from './components/DesignationCombobox';
 import { fetchLiveEurMadRate } from './utils/exchangeRate';
+
+interface TabColorTheme {
+  active: string;
+  inactive: string;
+  subActive: string;
+  subInactive: string;
+  okActive: string;
+  okInactive: string;
+}
 
 interface IncotermMeta {
   code: Incoterm;
@@ -41,6 +51,7 @@ interface IncotermMeta {
   defaultAssuranceTaux: number;
   defaultRoyaltiesMAD: number;
   weightLabel: string;
+  theme: TabColorTheme;
 }
 
 const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
@@ -55,7 +66,15 @@ const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
     showAssurance: true,
     defaultAssuranceTaux: 0.5,
     defaultRoyaltiesMAD: 2300,
-    weightLabel: 'Brut (KG)'
+    weightLabel: 'Brut (KG)',
+    theme: {
+      active: 'bg-blue-700 text-white border-blue-700 shadow-sm',
+      inactive: 'bg-blue-50/70 text-blue-950 border-blue-200/80 hover:bg-blue-100/70',
+      subActive: 'text-blue-100',
+      subInactive: 'text-blue-700/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-blue-700'
+    }
   },
   [Incoterm.CFR]: {
     code: Incoterm.CFR,
@@ -68,7 +87,15 @@ const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
     showAssurance: true,
     defaultAssuranceTaux: 0.5,
     defaultRoyaltiesMAD: 2300,
-    weightLabel: 'Net (KG)'
+    weightLabel: 'Net (KG)',
+    theme: {
+      active: 'bg-amber-600 text-white border-amber-600 shadow-sm',
+      inactive: 'bg-amber-50/70 text-amber-950 border-amber-200/80 hover:bg-amber-100/70',
+      subActive: 'text-amber-100',
+      subInactive: 'text-amber-800/75',
+      okActive: 'text-white',
+      okInactive: 'text-amber-700'
+    }
   },
   [Incoterm.CIF]: {
     code: Incoterm.CIF,
@@ -81,7 +108,15 @@ const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
     showAssurance: true,
     defaultAssuranceTaux: 0.5,
     defaultRoyaltiesMAD: 2300,
-    weightLabel: 'Brut (KG)'
+    weightLabel: 'Brut (KG)',
+    theme: {
+      active: 'bg-teal-700 text-white border-teal-700 shadow-sm',
+      inactive: 'bg-teal-50/70 text-teal-950 border-teal-200/80 hover:bg-teal-100/70',
+      subActive: 'text-teal-100',
+      subInactive: 'text-teal-800/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-teal-700'
+    }
   },
   [Incoterm.DAP]: {
     code: Incoterm.DAP,
@@ -94,7 +129,15 @@ const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
     showAssurance: true,
     defaultAssuranceTaux: 0.5,
     defaultRoyaltiesMAD: 2300,
-    weightLabel: 'Brut (KG)'
+    weightLabel: 'Brut (KG)',
+    theme: {
+      active: 'bg-indigo-700 text-white border-indigo-700 shadow-sm',
+      inactive: 'bg-indigo-50/70 text-indigo-950 border-indigo-200/80 hover:bg-indigo-100/70',
+      subActive: 'text-indigo-100',
+      subInactive: 'text-indigo-700/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-indigo-700'
+    }
   },
   [Incoterm.EXW]: {
     code: Incoterm.EXW,
@@ -107,7 +150,15 @@ const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
     showAssurance: true,
     defaultAssuranceTaux: 0.5,
     defaultRoyaltiesMAD: 2300,
-    weightLabel: 'Brut (KG)'
+    weightLabel: 'Brut (KG)',
+    theme: {
+      active: 'bg-slate-700 text-white border-slate-700 shadow-sm',
+      inactive: 'bg-slate-100/80 text-slate-900 border-slate-300/80 hover:bg-slate-200/70',
+      subActive: 'text-slate-200',
+      subInactive: 'text-slate-600',
+      okActive: 'text-amber-300',
+      okInactive: 'text-slate-700'
+    }
   },
   [Incoterm.DAT]: {
     code: Incoterm.DAT,
@@ -120,7 +171,15 @@ const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
     showAssurance: true,
     defaultAssuranceTaux: 0.5,
     defaultRoyaltiesMAD: 0,
-    weightLabel: 'Brut (KG)'
+    weightLabel: 'Brut (KG)',
+    theme: {
+      active: 'bg-emerald-700 text-white border-emerald-700 shadow-sm',
+      inactive: 'bg-emerald-50/70 text-emerald-950 border-emerald-200/80 hover:bg-emerald-100/70',
+      subActive: 'text-emerald-100',
+      subInactive: 'text-emerald-800/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-emerald-700'
+    }
   }
 };
 
@@ -128,28 +187,61 @@ interface RegimeMeta {
   code: Regime;
   label: string;
   subtitle: string;
+  theme: TabColorTheme;
 }
 
 const REGIME_CONFIGS: Record<Regime, RegimeMeta> = {
   [Regime.ONLY_023]: {
     code: Regime.ONLY_023,
     label: 'DUM 023',
-    subtitle: 'Mise à la consommation unique'
+    subtitle: 'Mise à la consommation unique',
+    theme: {
+      active: 'bg-sky-700 text-white border-sky-700 shadow-sm',
+      inactive: 'bg-sky-50/70 text-sky-950 border-sky-200/80 hover:bg-sky-100/70',
+      subActive: 'text-sky-100',
+      subInactive: 'text-sky-800/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-sky-700'
+    }
   },
   [Regime.ONLY_311]: {
     code: Regime.ONLY_311,
     label: 'DUM 311 (AT)',
-    subtitle: 'Admission temporaire seule (sans 023)'
+    subtitle: 'Admission temporaire seule (sans 023)',
+    theme: {
+      active: 'bg-emerald-700 text-white border-emerald-700 shadow-sm',
+      inactive: 'bg-emerald-50/70 text-emerald-950 border-emerald-200/80 hover:bg-emerald-100/70',
+      subActive: 'text-emerald-100',
+      subInactive: 'text-emerald-800/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-emerald-700'
+    }
   },
   [Regime.MIXED_312]: {
     code: Regime.MIXED_312,
     label: '023 + 312 (AT)',
-    subtitle: 'Consommation + AT Emballage'
+    subtitle: 'Consommation + AT Emballage',
+    theme: {
+      active: 'bg-violet-700 text-white border-violet-700 shadow-sm',
+      inactive: 'bg-violet-50/70 text-violet-950 border-violet-200/80 hover:bg-violet-100/70',
+      subActive: 'text-violet-100',
+      subInactive: 'text-violet-800/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-violet-700'
+    }
   },
   [Regime.MIXED_311]: {
     code: Regime.MIXED_311,
     label: '023 + 311 (AT)',
-    subtitle: 'Consommation + Admission temporaire'
+    subtitle: 'Consommation + Admission temporaire',
+    theme: {
+      active: 'bg-cyan-700 text-white border-cyan-700 shadow-sm',
+      inactive: 'bg-cyan-50/70 text-cyan-950 border-cyan-200/80 hover:bg-cyan-100/70',
+      subActive: 'text-cyan-100',
+      subInactive: 'text-cyan-800/75',
+      okActive: 'text-amber-200',
+      okInactive: 'text-cyan-700'
+    }
   }
 };
 
@@ -383,8 +475,8 @@ const ArticleTableCard: React.FC<ArticleTableCardProps> = ({
                       Assurance {formatDecimal(logistics.assuranceTaux, 2)}% · VD Estimée
                     </label>
                     <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-slate-700 flex items-center justify-between gap-2">
-                      <span>{formatDecimal(assuranceArt)} DH</span>
-                      <span className="font-semibold text-blue-900">{formatDecimal(vdDatPreview)} DH</span>
+                      <span>{formatRounded(assuranceArt)} DH</span>
+                      <span className="font-semibold text-blue-900">{formatRounded(vdDatPreview)} DH</span>
                     </div>
                   </div>
                 ) : (
@@ -393,7 +485,7 @@ const ArticleTableCard: React.FC<ArticleTableCardProps> = ({
                       Acconage (DH)
                     </label>
                     <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg px-3 py-2 text-sm font-mono tabular-nums font-medium text-emerald-800 truncate">
-                      {formatDecimal(acconageArt)}
+                      {formatRounded(acconageArt)} DH
                     </div>
                   </div>
                 )}
@@ -892,7 +984,7 @@ const App: React.FC = () => {
           <div
             role="tablist"
             aria-label="Onglets Incoterms"
-            className="grid grid-cols-3 sm:grid-cols-6 gap-2"
+            className="grid grid-cols-3 sm:grid-cols-6 gap-2.5"
           >
             {INCOTERM_ORDER.map(inc => {
               const item = INCOTERM_CONFIGS[inc];
@@ -907,10 +999,8 @@ const App: React.FC = () => {
                   type="button"
                   aria-selected={isSelected}
                   onClick={() => setActiveIncoterm(inc)}
-                  className={`px-3 py-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#1e3a8a] text-white border-[#1e3a8a]'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  className={`px-3.5 py-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    isSelected ? item.theme.active : item.theme.inactive
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -919,8 +1009,8 @@ const App: React.FC = () => {
                     </span>
                     {anyResultInIncoterm && (
                       <span
-                        className={`text-[11px] font-mono ${
-                          isSelected ? 'text-amber-300' : 'text-emerald-700'
+                        className={`text-[11px] font-mono font-semibold ${
+                          isSelected ? item.theme.okActive : item.theme.okInactive
                         }`}
                       >
                         OK
@@ -929,7 +1019,7 @@ const App: React.FC = () => {
                   </div>
                   <div
                     className={`text-xs truncate mt-0.5 ${
-                      isSelected ? 'text-blue-200' : 'text-slate-500'
+                      isSelected ? item.theme.subActive : item.theme.subInactive
                     }`}
                   >
                     {item.label}
@@ -952,7 +1042,7 @@ const App: React.FC = () => {
             <div
               role="tablist"
               aria-label={`Régimes douaniers pour ${activeIncoterm}`}
-              className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+              className="grid grid-cols-2 sm:grid-cols-4 gap-2.5"
             >
               {REGIME_ORDER.map(reg => {
                 const regMeta = REGIME_CONFIGS[reg];
@@ -965,10 +1055,8 @@ const App: React.FC = () => {
                     type="button"
                     aria-selected={isSelected}
                     onClick={() => setActiveRegime(reg)}
-                    className={`px-3 py-2 rounded-lg border text-left transition-colors cursor-pointer ${
-                      isSelected
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    className={`px-3.5 py-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                      isSelected ? regMeta.theme.active : regMeta.theme.inactive
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -977,8 +1065,8 @@ const App: React.FC = () => {
                       </span>
                       {hasRegResult && (
                         <span
-                          className={`text-[10px] font-mono ${
-                            isSelected ? 'text-amber-300' : 'text-emerald-700'
+                          className={`text-[10px] font-mono font-semibold ${
+                            isSelected ? regMeta.theme.okActive : regMeta.theme.okInactive
                           }`}
                         >
                           OK
@@ -987,7 +1075,7 @@ const App: React.FC = () => {
                     </div>
                     <div
                       className={`text-[11px] truncate mt-0.5 ${
-                        isSelected ? 'text-slate-300' : 'text-slate-500'
+                        isSelected ? regMeta.theme.subActive : regMeta.theme.subInactive
                       }`}
                     >
                       {regMeta.subtitle}
@@ -1192,7 +1280,14 @@ const App: React.FC = () => {
                 <span className="font-mono">{activeIncoterm} · {activeRegime}</span>
               </div>
               <div className="text-3xl font-bold font-mono tabular-nums text-amber-400 mt-1 mb-5">
-                {result ? formatCurrency(result.totalValeurDouane) : '---,-- DH'}
+                {result
+                  ? formatCurrency(
+                      has023 && hasAT && result.regime023 && result.regimeAT
+                        ? Math.round(result.regime023.valeurDouaneTotal) +
+                          Math.round(result.regimeAT.valeurDouaneTotal)
+                        : result.totalValeurDouane
+                    )
+                  : '--- DH'}
               </div>
 
               <div className="space-y-2.5 pt-4 border-t border-white/15 text-xs">
@@ -1206,7 +1301,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-blue-200">Contre-Valeur (MAD)</span>
                   <span className="font-mono tabular-nums font-semibold">
-                    {result ? formatCurrency(result.totalValeurMAD) : '0,00 MAD'}
+                    {result ? formatCurrency(result.totalValeurMAD) : '0 DH'}
                   </span>
                 </div>
 
@@ -1214,7 +1309,7 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-blue-200">Fret Total (MAD)</span>
                     <span className="font-mono tabular-nums font-semibold">
-                      {result ? formatCurrency(result.totalFretMAD) : '0,00 MAD'}
+                      {result ? formatCurrency(result.totalFretMAD) : '0 DH'}
                     </span>
                   </div>
                 )}
@@ -1224,7 +1319,7 @@ const App: React.FC = () => {
                     Assurance ({formatDecimal(logistics.assuranceTaux, 2)}%)
                   </span>
                   <span className="font-mono tabular-nums font-semibold">
-                    {result ? formatCurrency(result.totalAssuranceMAD) : '0,00 MAD'}
+                    {result ? formatCurrency(result.totalAssuranceMAD) : '0 DH'}
                   </span>
                 </div>
 
@@ -1232,7 +1327,7 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-blue-200">Acconage (MAD)</span>
                     <span className="font-mono tabular-nums font-semibold">
-                      {result ? formatCurrency(result.totalRoyaltiesMAD) : '0,00 MAD'}
+                      {result ? formatCurrency(result.totalRoyaltiesMAD) : '0 DH'}
                     </span>
                   </div>
                 )}
@@ -1242,7 +1337,7 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-blue-100 font-medium">DUM 023</span>
                       <span className="font-mono tabular-nums font-bold">
-                        {result?.regime023 ? formatCurrency(result.regime023.valeurDouaneTotal) : '0,00 MAD'}
+                        {result?.regime023 ? formatCurrency(result.regime023.valeurDouaneTotal) : '0 DH'}
                       </span>
                     </div>
                   )}
@@ -1251,7 +1346,7 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-emerald-200 font-medium">{atLabelShort}</span>
                       <span className="font-mono tabular-nums font-bold text-emerald-300">
-                        {result?.regimeAT ? formatCurrency(result.regimeAT.valeurDouaneTotal) : '0,00 MAD'}
+                        {result?.regimeAT ? formatCurrency(result.regimeAT.valeurDouaneTotal) : '0 DH'}
                       </span>
                     </div>
                   )}
@@ -1259,7 +1354,7 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-center text-blue-200 pt-1">
                     <span>{isCFR ? 'Poids Net Global' : 'Poids Brut Global'}</span>
                     <span className="font-mono tabular-nums font-semibold">
-                      {formatDecimal(totalGlobalPb, 2)} KG
+                      {formatRounded(totalGlobalPb)} KG
                     </span>
                   </div>
                 </div>
