@@ -167,7 +167,26 @@ const REGIME_ORDER: Regime[] = [
 ];
 
 const DEFAULT_EUR_MAD = 10.85;
-const SAVED_PRODUCTS_STORAGE_KEY = 'douane_maroc_saved_designations_v1';
+const SAVED_PRODUCTS_STORAGE_KEY = 'douane_maroc_saved_designations_v2';
+const LEGACY_SAVED_PRODUCTS_STORAGE_KEY = 'douane_maroc_saved_designations_v1';
+
+const DEFAULT_PRODUCTS: string[] = [
+  'ANCHOIS EN SAUMURE',
+  'ANCHOIS FRAIS',
+  'CREVETTES NON DECORTIQUEES FRAIS',
+  'CREVETTES NON DECORTIQUEES CONGELES',
+  'CAISSES EN P.V.C',
+  'PALETTES EN P.V.C',
+  'PALETTES EN BOIS',
+  'FUTS EN PLATSIQUES',
+  'SEAUX',
+  'BANDEJAS',
+  'SACS EN PLASTIQUES',
+  'BOBINAS',
+  'CARTONS',
+  'CONSERVATEUR',
+  'ACIDE CITRIQUE'
+];
 
 const createInitialArticle = (id: number): Article => ({
   id,
@@ -413,12 +432,32 @@ const App: React.FC = () => {
 
   const [savedProducts, setSavedProducts] = useState<string[]>(() => {
     try {
-      const raw = localStorage.getItem(SAVED_PRODUCTS_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+      const rawV2 = localStorage.getItem(SAVED_PRODUCTS_STORAGE_KEY);
+      if (rawV2) {
+        const parsed = JSON.parse(rawV2);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+        }
+      }
+
+      const merged: string[] = [...DEFAULT_PRODUCTS];
+      const rawV1 = localStorage.getItem(LEGACY_SAVED_PRODUCTS_STORAGE_KEY);
+      if (rawV1) {
+        const parsedV1 = JSON.parse(rawV1);
+        if (Array.isArray(parsedV1)) {
+          for (const item of parsedV1) {
+            if (typeof item === 'string' && item.trim().length > 0) {
+              const trimmed = item.trim();
+              if (!merged.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+                merged.unshift(trimmed);
+              }
+            }
+          }
+        }
+      }
+      return merged;
     } catch {
-      return [];
+      return [...DEFAULT_PRODUCTS];
     }
   });
 
