@@ -9,7 +9,8 @@ import {
   Info,
   Package,
   TrendingUp,
-  Layers
+  Layers,
+  Coins
 } from 'lucide-react';
 import {
   Article,
@@ -167,6 +168,7 @@ const REGIME_ORDER: Regime[] = [
 ];
 
 const DEFAULT_EUR_MAD = 10.85;
+const TAUX_STORAGE_KEY = 'douane_maroc_taux_eur_mad_v1';
 const SAVED_PRODUCTS_STORAGE_KEY = 'douane_maroc_saved_designations_v2';
 const LEGACY_SAVED_PRODUCTS_STORAGE_KEY = 'douane_maroc_saved_designations_v1';
 
@@ -205,7 +207,10 @@ interface RegimeFormState {
   result: CalculationResult | null;
 }
 
-const createInitialRegimeState = (incoterm: Incoterm): RegimeFormState => {
+const createInitialRegimeState = (
+  incoterm: Incoterm,
+  tauxEurMad: number = DEFAULT_EUR_MAD
+): RegimeFormState => {
   const cfg = INCOTERM_CONFIGS[incoterm];
   return {
     logistics: {
@@ -213,12 +218,11 @@ const createInitialRegimeState = (incoterm: Incoterm): RegimeFormState => {
       fretGlobalMAD: 0,
       assuranceTaux: cfg.defaultAssuranceTaux,
       royaltiesMAD: cfg.defaultRoyaltiesMAD,
-      tauxEurMad: DEFAULT_EUR_MAD
+      tauxEurMad
     },
     articles023: [createInitialArticle(1)],
     articlesAT: [createInitialArticle(1)],
     rawInputs: {
-      'log-tauxEurMad': DEFAULT_EUR_MAD.toString().replace('.', ','),
       'log-royaltiesMAD': cfg.defaultRoyaltiesMAD.toString(),
       'log-assuranceTaux': cfg.defaultAssuranceTaux.toString().replace('.', ','),
       'log-fretGlobalEUR': '0',
@@ -228,11 +232,14 @@ const createInitialRegimeState = (incoterm: Incoterm): RegimeFormState => {
   };
 };
 
-const createInitialIncotermRegimes = (incoterm: Incoterm): Record<Regime, RegimeFormState> => ({
-  [Regime.ONLY_023]: createInitialRegimeState(incoterm),
-  [Regime.ONLY_311]: createInitialRegimeState(incoterm),
-  [Regime.MIXED_312]: createInitialRegimeState(incoterm),
-  [Regime.MIXED_311]: createInitialRegimeState(incoterm)
+const createInitialIncotermRegimes = (
+  incoterm: Incoterm,
+  tauxEurMad: number = DEFAULT_EUR_MAD
+): Record<Regime, RegimeFormState> => ({
+  [Regime.ONLY_023]: createInitialRegimeState(incoterm, tauxEurMad),
+  [Regime.ONLY_311]: createInitialRegimeState(incoterm, tauxEurMad),
+  [Regime.MIXED_312]: createInitialRegimeState(incoterm, tauxEurMad),
+  [Regime.MIXED_311]: createInitialRegimeState(incoterm, tauxEurMad)
 });
 
 interface ArticleTableCardProps {
@@ -421,14 +428,46 @@ const App: React.FC = () => {
     [Incoterm.DAT]: Regime.ONLY_023
   });
 
-  const [tabStates, setTabStates] = useState<Record<Incoterm, Record<Regime, RegimeFormState>>>(() => ({
-    [Incoterm.FOB]: createInitialIncotermRegimes(Incoterm.FOB),
-    [Incoterm.CFR]: createInitialIncotermRegimes(Incoterm.CFR),
-    [Incoterm.CIF]: createInitialIncotermRegimes(Incoterm.CIF),
-    [Incoterm.DAP]: createInitialIncotermRegimes(Incoterm.DAP),
-    [Incoterm.EXW]: createInitialIncotermRegimes(Incoterm.EXW),
-    [Incoterm.DAT]: createInitialIncotermRegimes(Incoterm.DAT)
-  }));
+  const [globalTauxInput, setGlobalTauxInput] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(TAUX_STORAGE_KEY);
+      if (saved && saved.trim().length > 0) return saved;
+    } catch {
+      // Ignore storage read errors
+    }
+    return DEFAULT_EUR_MAD.toString().replace('.', ',');
+  });
+
+  const globalTauxEurMad = useMemo(
+    () => sanitizeNumericInput(globalTauxInput),
+    [globalTauxInput]
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TAUX_STORAGE_KEY, globalTauxInput);
+    } catch {
+      // Ignore storage write errors
+    }
+  }, [globalTauxInput]);
+
+  const [tabStates, setTabStates] = useState<Record<Incoterm, Record<Regime, RegimeFormState>>>(() => {
+    let initialTaux = DEFAULT_EUR_MAD;
+    try {
+      const saved = localStorage.getItem(TAUX_STORAGE_KEY);
+      if (saved && saved.trim().length > 0) initialTaux = sanitizeNumericInput(saved);
+    } catch {
+      // Ignore storage read errors
+    }
+    return {
+      [Incoterm.FOB]: createInitialIncotermRegimes(Incoterm.FOB, initialTaux),
+      [Incoterm.CFR]: createInitialIncotermRegimes(Incoterm.CFR, initialTaux),
+      [Incoterm.CIF]: createInitialIncotermRegimes(Incoterm.CIF, initialTaux),
+      [Incoterm.DAP]: createInitialIncotermRegimes(Incoterm.DAP, initialTaux),
+      [Incoterm.EXW]: createInitialIncotermRegimes(Incoterm.EXW, initialTaux),
+      [Incoterm.DAT]: createInitialIncotermRegimes(Incoterm.DAT, initialTaux)
+    };
+  });
 
   const [savedProducts, setSavedProducts] = useState<string[]>(() => {
     try {
@@ -514,6 +553,10 @@ const App: React.FC = () => {
     (incoterm: Incoterm, regime: Regime, updater: (prev: RegimeFormState) => RegimeFormState) => {
       setTabStates(prev => {
         const nextRegimeState = updater(prev[incoterm][regime]);
+        nextRegimeState.logistics = {
+          ...nextRegimeState.logistics,
+          tauxEurMad: globalTauxEurMad
+        };
         if (nextRegimeState.result !== null) {
           nextRegimeState.result = calculateCustoms(
             nextRegimeState.articles023,
@@ -532,8 +575,46 @@ const App: React.FC = () => {
         };
       });
     },
-    []
+    [globalTauxEurMad]
   );
+
+  const handleGlobalTauxChange = useCallback((rawValue: string) => {
+    setGlobalTauxInput(rawValue);
+    const nextTaux = sanitizeNumericInput(rawValue);
+
+    setTabStates(prev => {
+      const next = { ...prev };
+      for (const inc of INCOTERM_ORDER) {
+        const nextRegimes = { ...prev[inc] };
+        for (const reg of REGIME_ORDER) {
+          const tab = prev[inc][reg];
+          const madVal = Number(((tab.logistics.fretGlobalEUR || 0) * nextTaux).toFixed(2));
+          const updatedLogistics: GlobalLogistics = {
+            ...tab.logistics,
+            tauxEurMad: nextTaux,
+            fretGlobalMAD: madVal
+          };
+          const updatedRawInputs = {
+            ...tab.rawInputs,
+            'log-fretGlobalMAD': madVal.toString().replace('.', ',')
+          };
+          const updatedResult =
+            tab.result !== null
+              ? calculateCustoms(tab.articles023, reg, inc, updatedLogistics, tab.articlesAT)
+              : null;
+
+          nextRegimes[reg] = {
+            ...tab,
+            logistics: updatedLogistics,
+            rawInputs: updatedRawInputs,
+            result: updatedResult
+          };
+        }
+        next[inc] = nextRegimes;
+      }
+      return next;
+    });
+  }, []);
 
   const handleCalculate = useCallback(() => {
     const activeArticles = [
@@ -544,32 +625,33 @@ const App: React.FC = () => {
 
     setTabStates(prev => {
       const tab = prev[activeIncoterm][activeRegime];
+      const syncedLogistics = { ...tab.logistics, tauxEurMad: globalTauxEurMad };
       const calculated = calculateCustoms(
         tab.articles023,
         activeRegime,
         activeIncoterm,
-        tab.logistics,
+        syncedLogistics,
         tab.articlesAT
       );
       return {
         ...prev,
         [activeIncoterm]: {
           ...prev[activeIncoterm],
-          [activeRegime]: { ...tab, result: calculated }
+          [activeRegime]: { ...tab, logistics: syncedLogistics, result: calculated }
         }
       };
     });
-  }, [activeIncoterm, activeRegime, currentTab, has023, hasAT, persistUsedDesignations]);
+  }, [activeIncoterm, activeRegime, currentTab, globalTauxEurMad, has023, hasAT, persistUsedDesignations]);
 
   const handleReset = useCallback(() => {
     setTabStates(prev => ({
       ...prev,
       [activeIncoterm]: {
         ...prev[activeIncoterm],
-        [activeRegime]: createInitialRegimeState(activeIncoterm)
+        [activeRegime]: createInitialRegimeState(activeIncoterm, globalTauxEurMad)
       }
     }));
-  }, [activeIncoterm, activeRegime]);
+  }, [activeIncoterm, activeRegime, globalTauxEurMad]);
 
   const setActiveRegime = (nextRegime: Regime) => {
     setActiveRegimeByIncoterm(prev => ({ ...prev, [activeIncoterm]: nextRegime }));
@@ -624,23 +706,19 @@ const App: React.FC = () => {
 
     updateRegimeState(activeIncoterm, activeRegime, prev => {
       const nextInputs = { ...prev.rawInputs, [inputKey]: rawValue };
-      const nextLogistics = { ...prev.logistics, [field]: val };
+      const nextLogistics = { ...prev.logistics, tauxEurMad: globalTauxEurMad, [field]: val };
 
       if (field === 'fretGlobalEUR') {
-        const madVal = Number((val * (prev.logistics.tauxEurMad || 0)).toFixed(2));
+        const madVal = Number((val * globalTauxEurMad).toFixed(2));
         nextLogistics.fretGlobalMAD = madVal;
         nextInputs['log-fretGlobalMAD'] = madVal.toString().replace('.', ',');
       } else if (field === 'fretGlobalMAD') {
         const eurVal =
-          prev.logistics.tauxEurMad > 0
-            ? Number((val / prev.logistics.tauxEurMad).toFixed(2))
+          globalTauxEurMad > 0
+            ? Number((val / globalTauxEurMad).toFixed(2))
             : 0;
         nextLogistics.fretGlobalEUR = eurVal;
         nextInputs['log-fretGlobalEUR'] = eurVal.toString().replace('.', ',');
-      } else if (field === 'tauxEurMad') {
-        const madVal = Number(((prev.logistics.fretGlobalEUR || 0) * val).toFixed(2));
-        nextLogistics.fretGlobalMAD = madVal;
-        nextInputs['log-fretGlobalMAD'] = madVal.toString().replace('.', ',');
       }
 
       return {
@@ -700,6 +778,46 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl w-full mx-auto px-6 py-8 flex-1 space-y-6">
+        {/* Global Exchange Rate Bar (shared across all Incoterms & Régimes) */}
+        <section
+          aria-label="Taux de change global"
+          className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 shrink-0">
+              <Coins className="w-5 h-5" />
+            </div>
+            <div>
+              <label
+                htmlFor="global-taux-eur-mad"
+                className="block text-sm font-bold text-slate-900"
+              >
+                Taux de change Global (EUR / MAD)
+              </label>
+              <p className="text-xs text-slate-500">
+                Appliqué à tous les onglets Incoterms et conservé lors du changement d’onglet.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="relative w-44">
+              <input
+                id="global-taux-eur-mad"
+                type="text"
+                inputMode="decimal"
+                value={globalTauxInput}
+                onChange={e => handleGlobalTauxChange(e.target.value)}
+                className="w-full bg-amber-50/40 border border-amber-300 rounded-lg pl-3.5 pr-12 py-2.5 text-base font-mono tabular-nums font-bold text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
+                placeholder="10,85"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-slate-500 pointer-events-none">
+                MAD
+              </span>
+            </div>
+          </div>
+        </section>
+
         {/* Level 1: Incoterm Tabs + Level 2: Régime Douanier Sub-Tabs under each Incoterm */}
         <section aria-label="Sélection de l'Incoterm et du Régime" className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
@@ -842,23 +960,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <label
-                    htmlFor={`taux-${activeIncoterm}-${activeRegime}`}
-                    className="block text-xs font-medium text-slate-600 mb-1.5"
-                  >
-                    Taux de change (EUR / MAD)
-                  </label>
-                  <input
-                    id={`taux-${activeIncoterm}-${activeRegime}`}
-                    type="text"
-                    inputMode="decimal"
-                    value={rawInputs['log-tauxEurMad'] ?? ''}
-                    onChange={e => updateLogistics('tauxEurMad', e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono tabular-nums font-semibold text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/10"
-                    placeholder="10,85"
-                  />
-                </div>
 
                 {config.showAssurance && (
                   <div>
@@ -1041,6 +1142,13 @@ const App: React.FC = () => {
               </div>
 
               <div className="space-y-2.5 pt-4 border-t border-white/15 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-blue-200">Taux EUR / MAD (Global)</span>
+                  <span className="font-mono tabular-nums font-semibold text-amber-300">
+                    {formatDecimal(globalTauxEurMad, 4)} DH
+                  </span>
+                </div>
+
                 <div className="flex justify-between items-center">
                   <span className="text-blue-200">Contre-Valeur (MAD)</span>
                   <span className="font-mono tabular-nums font-semibold">
