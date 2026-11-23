@@ -10,7 +10,8 @@ import {
   Package,
   TrendingUp,
   Layers,
-  Coins
+  Coins,
+  RefreshCw
 } from 'lucide-react';
 import {
   Article,
@@ -27,6 +28,7 @@ import {
 } from './utils/calculations';
 import { generatePDFReport } from './utils/pdfGenerator';
 import { DesignationCombobox } from './components/DesignationCombobox';
+import { fetchLiveEurMadRate } from './utils/exchangeRate';
 
 interface IncotermMeta {
   code: Incoterm;
@@ -71,13 +73,13 @@ const INCOTERM_CONFIGS: Record<Incoterm, IncotermMeta> = {
   [Incoterm.CIF]: {
     code: Incoterm.CIF,
     label: 'Cost, Insurance & Freight',
-    formula: 'VD = (Valeur € × Taux) + Acconage · Fret et Assurance inclus',
+    formula: 'VD = (Valeur € × Taux) + Fret + Assurance (0,5% sur CV + Fret) + Acconage',
     description:
-      'Le fret et l’assurance sont inclus dans la valeur CIF. Seul l’acconage est ajouté.',
-    showFreight: false,
+      'Calcul standard avec fret, assurance (0,5% par défaut) et acconage. Laissez le fret à 0 s’il est déjà inclus dans la facture.',
+    showFreight: true,
     showAcconage: true,
     showAssurance: true,
-    defaultAssuranceTaux: 0,
+    defaultAssuranceTaux: 0.5,
     defaultRoyaltiesMAD: 2300,
     weightLabel: 'Brut (KG)'
   },
@@ -428,6 +430,15 @@ const App: React.FC = () => {
     [Incoterm.DAT]: Regime.ONLY_023
   });
 
+  const [hadSavedRateOnMount] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(TAUX_STORAGE_KEY);
+      return !!(saved && saved.trim().length > 0);
+    } catch {
+      return false;
+    }
+  });
+
   const [globalTauxInput, setGlobalTauxInput] = useState<string>(() => {
     try {
       const saved = localStorage.getItem(TAUX_STORAGE_KEY);
@@ -437,6 +448,9 @@ const App: React.FC = () => {
     }
     return DEFAULT_EUR_MAD.toString().replace('.', ',');
   });
+  const [isFetchingRate, setIsFetchingRate] = useState(false);
+  const [rateMeta, setRateMeta] = useState<{ dateLabel: string; source: string } | null>(null);
+  const [rateError, setRateError] = useState<string | null>(null);
 
   const globalTauxEurMad = useMemo(
     () => sanitizeNumericInput(globalTauxInput),
@@ -580,6 +594,7 @@ const App: React.FC = () => {
 
   const handleGlobalTauxChange = useCallback((rawValue: string) => {
     setGlobalTauxInput(rawValue);
+    setRateError(null);
     const nextTaux = sanitizeNumericInput(rawValue);
 
     setTabStates(prev => {
@@ -615,6 +630,27 @@ const App: React.FC = () => {
       return next;
     });
   }, []);
+
+  const handleFetchDailyRate = useCallback(async () => {
+    setIsFetchingRate(true);
+    setRateError(null);
+    try {
+      const live = await fetchLiveEurMadRate();
+      const formatted = live.rate.toFixed(4).replace('.', ',');
+      handleGlobalTauxChange(formatted);
+      setRateMeta({ dateLabel: live.dateLabel, source: live.source });
+    } catch {
+      setRateError('Connexion impossible pour récupérer le taux du jour.');
+    } finally {
+      setIsFetchingRate(false);
+    }
+  }, [handleGlobalTauxChange]);
+
+  useEffect(() => {
+    if (!hadSavedRateOnMount) {
+      void handleFetchDailyRate();
+    }
+  }, [hadSavedRateOnMount, handleFetchDailyRate]);
 
   const handleCalculate = useCallback(() => {
     const activeArticles = [
@@ -781,7 +817,7 @@ const App: React.FC = () => {
         {/* Global Exchange Rate Bar (shared across all Incoterms & Régimes) */}
         <section
           aria-label="Taux de change global"
-          className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4"
         >
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 shrink-0">
@@ -795,12 +831,20 @@ const App: React.FC = () => {
                 Taux de change Global (EUR / MAD)
               </label>
               <p className="text-xs text-slate-500">
-                Appliqué à tous les onglets Incoterms et conservé lors du changement d’onglet.
+                Appliqué à tous les onglets Incoterms · conservé lors du changement d’onglet.
+                {rateMeta && (
+                  <span className="ml-1.5 text-emerald-700 font-medium">
+                    · Taux du {rateMeta.dateLabel} ({rateMeta.source})
+                  </span>
+                )}
               </p>
+              {rateError && (
+                <p className="text-xs text-rose-600 mt-0.5">{rateError}</p>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
             <div className="relative w-44">
               <input
                 id="global-taux-eur-mad"
@@ -815,6 +859,16 @@ const App: React.FC = () => {
                 MAD
               </span>
             </div>
+
+            <button
+              type="button"
+              onClick={handleFetchDailyRate}
+              disabled={isFetchingRate}
+              className="px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-800 flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isFetchingRate ? 'animate-spin' : ''}`} />
+              {isFetchingRate ? 'Chargement...' : 'Taux du jour'}
+            </button>
           </div>
         </section>
 
@@ -1055,7 +1109,7 @@ const App: React.FC = () => {
                 <div className="px-5 py-3 bg-blue-50 border-t border-blue-200/80 text-xs text-blue-900 flex items-center gap-2">
                   <Info className="w-4 h-4 text-blue-700 shrink-0" />
                   <span>
-                    Mode CIF : le fret et l’assurance sont inclus dans la facture (taux assurance à 0% par défaut). Seul l’acconage est ajouté.
+                    Mode CIF : le fret et l’assurance (0,5% par défaut) restent modifiables. Laissez le fret à 0 s’il est déjà inclus dans la facture CIF.
                   </span>
                 </div>
               )}
@@ -1156,7 +1210,7 @@ const App: React.FC = () => {
                   </span>
                 </div>
 
-                {!isDAT && !isCIF && !isCFR && (
+                {!isDAT && !isCFR && (
                   <div className="flex justify-between items-center">
                     <span className="text-blue-200">Fret Total (MAD)</span>
                     <span className="font-mono tabular-nums font-semibold">

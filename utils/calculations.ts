@@ -16,15 +16,10 @@ export const calculateCustoms = (
   const activeArticlesAT = hasAT ? articlesAT : [];
 
   const isCFR = incoterm === Incoterm.CFR;
-  const isCIF = incoterm === Incoterm.CIF;
   const isDAT = incoterm === Incoterm.DAT;
 
-  const hasFreightInForm =
-    incoterm === Incoterm.FOB ||
-    incoterm === Incoterm.EXW ||
-    incoterm === Incoterm.DAP ||
-    isCFR;
-  const excludeFretFromVD = isCFR || isCIF || isDAT;
+  const hasFreightInForm = !isDAT;
+  const excludeFretFromVD = isCFR || isDAT;
   const hasAcconage = !isDAT;
 
   const totalPb023 = activeArticles023.reduce((sum, a) => sum + (a.poidsBrut || 0), 0);
@@ -62,7 +57,7 @@ export const calculateCustoms = (
         baseAssurance = cvMAD;
         assuranceArtMAD = baseAssurance * (assuranceTaux / 100);
         vdArt = cvMAD + assuranceArtMAD;
-      } else if (isCFR || isCIF) {
+      } else if (isCFR) {
         baseAssurance = cvMAD;
         assuranceArtMAD = baseAssurance * (assuranceTaux / 100);
         vdArt = cvMAD + assuranceArtMAD + royaltiesArtMAD;

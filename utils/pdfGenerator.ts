@@ -23,7 +23,6 @@ export const generatePDFReport = (
 
   const isCFR = incoterm === Incoterm.CFR;
   const isDAT = incoterm === Incoterm.DAT;
-  const isCIF = incoterm === Incoterm.CIF;
 
   let atDUMName = 'DUM AT';
   if (regime === Regime.ONLY_311 || regime === Regime.MIXED_311) atDUMName = 'DUM 311 (AT)';
@@ -72,7 +71,7 @@ export const generatePDFReport = (
 
   const fretLabel = isCFR
     ? 'Fret (MAD) — Inclus / Exclu VD'
-    : isDAT || isCIF
+    : isDAT
       ? 'Fret (MAD) — Inclus'
       : 'Fret (MAD)';
 
@@ -108,7 +107,7 @@ export const generatePDFReport = (
     )
   ];
 
-  if (!isDAT && !isCIF) {
+  if (!isDAT) {
     rows.push(
       makeSummaryRow(
         fretLabel,
@@ -119,16 +118,14 @@ export const generatePDFReport = (
     );
   }
 
-  if (!isCIF || result.totalAssuranceMAD > 0) {
-    rows.push(
-      makeSummaryRow(
-        `Assurance (${formatDecimal(result.assuranceTaux, 2)}%)`,
-        has023 ? fmtMAD(result.regime023!.assuranceMAD) : '',
-        hasAT ? fmtMAD(result.regimeAT!.assuranceMAD) : '',
-        fmtMAD(result.totalAssuranceMAD)
-      )
-    );
-  }
+  rows.push(
+    makeSummaryRow(
+      `Assurance (${formatDecimal(result.assuranceTaux, 2)}%)`,
+      has023 ? fmtMAD(result.regime023!.assuranceMAD) : '',
+      hasAT ? fmtMAD(result.regimeAT!.assuranceMAD) : '',
+      fmtMAD(result.totalAssuranceMAD)
+    )
+  );
 
   if (!isDAT) {
     rows.push(
@@ -220,7 +217,7 @@ export const generatePDFReport = (
     doc.text(title, 15, yPos);
     yPos += 4;
 
-    const showFretCol = !isDAT && !isCIF && !isCFR;
+    const showFretCol = !isDAT && !isCFR;
     const showAcconageCol = !isDAT;
 
     const headCols = ['Art.', 'Désignation', 'Valeur (€)', 'CV (MAD)'];
