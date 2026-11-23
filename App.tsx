@@ -475,7 +475,7 @@ const ArticleTableCard: React.FC<ArticleTableCardProps> = ({
                       Assurance {formatDecimal(logistics.assuranceTaux, 2)}% · VD Estimée
                     </label>
                     <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-slate-700 flex items-center justify-between gap-2">
-                      <span>{formatRounded(assuranceArt)} DH</span>
+                      <span>{formatDecimal(assuranceArt, 2)} DH</span>
                       <span className="font-semibold text-blue-900">{formatRounded(vdDatPreview)} DH</span>
                     </div>
                   </div>
@@ -485,7 +485,7 @@ const ArticleTableCard: React.FC<ArticleTableCardProps> = ({
                       Acconage (DH)
                     </label>
                     <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg px-3 py-2 text-sm font-mono tabular-nums font-medium text-emerald-800 truncate">
-                      {formatRounded(acconageArt)} DH
+                      {formatDecimal(acconageArt, 2)} DH
                     </div>
                   </div>
                 )}
@@ -1281,12 +1281,12 @@ const App: React.FC = () => {
               </div>
               <div className="text-3xl font-bold font-mono tabular-nums text-amber-400 mt-1 mb-5">
                 {result
-                  ? formatCurrency(
+                  ? `${formatRounded(
                       has023 && hasAT && result.regime023 && result.regimeAT
                         ? Math.round(result.regime023.valeurDouaneTotal) +
                           Math.round(result.regimeAT.valeurDouaneTotal)
                         : result.totalValeurDouane
-                    )
+                    )} DH`
                   : '--- DH'}
               </div>
 
@@ -1301,7 +1301,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-blue-200">Contre-Valeur (MAD)</span>
                   <span className="font-mono tabular-nums font-semibold">
-                    {result ? formatCurrency(result.totalValeurMAD) : '0 DH'}
+                    {result ? formatCurrency(result.totalValeurMAD) : '0,00 DH'}
                   </span>
                 </div>
 
@@ -1309,7 +1309,7 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-blue-200">Fret Total (MAD)</span>
                     <span className="font-mono tabular-nums font-semibold">
-                      {result ? formatCurrency(result.totalFretMAD) : '0 DH'}
+                      {result ? formatCurrency(result.totalFretMAD) : '0,00 DH'}
                     </span>
                   </div>
                 )}
@@ -1319,7 +1319,7 @@ const App: React.FC = () => {
                     Assurance ({formatDecimal(logistics.assuranceTaux, 2)}%)
                   </span>
                   <span className="font-mono tabular-nums font-semibold">
-                    {result ? formatCurrency(result.totalAssuranceMAD) : '0 DH'}
+                    {result ? formatCurrency(result.totalAssuranceMAD) : '0,00 DH'}
                   </span>
                 </div>
 
@@ -1327,7 +1327,7 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-blue-200">Acconage (MAD)</span>
                     <span className="font-mono tabular-nums font-semibold">
-                      {result ? formatCurrency(result.totalRoyaltiesMAD) : '0 DH'}
+                      {result ? formatCurrency(result.totalRoyaltiesMAD) : '0,00 DH'}
                     </span>
                   </div>
                 )}
@@ -1337,7 +1337,7 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-blue-100 font-medium">DUM 023</span>
                       <span className="font-mono tabular-nums font-bold">
-                        {result?.regime023 ? formatCurrency(result.regime023.valeurDouaneTotal) : '0 DH'}
+                        {result?.regime023 ? `${formatRounded(result.regime023.valeurDouaneTotal)} DH` : '0 DH'}
                       </span>
                     </div>
                   )}
@@ -1346,7 +1346,7 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-emerald-200 font-medium">{atLabelShort}</span>
                       <span className="font-mono tabular-nums font-bold text-emerald-300">
-                        {result?.regimeAT ? formatCurrency(result.regimeAT.valeurDouaneTotal) : '0 DH'}
+                        {result?.regimeAT ? `${formatRounded(result.regimeAT.valeurDouaneTotal)} DH` : '0 DH'}
                       </span>
                     </div>
                   )}
@@ -1354,7 +1354,7 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-center text-blue-200 pt-1">
                     <span>{isCFR ? 'Poids Net Global' : 'Poids Brut Global'}</span>
                     <span className="font-mono tabular-nums font-semibold">
-                      {formatRounded(totalGlobalPb)} KG
+                      {formatDecimal(totalGlobalPb, 2)} KG
                     </span>
                   </div>
                 </div>

@@ -123,11 +123,10 @@ export const calculateCustoms = (
 };
 
 export const formatCurrency = (val: number) => {
-  const rounded = Math.round(val || 0);
   const formatted = new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(rounded);
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(val || 0);
   return `${formatted.replace(/[\u00A0\u202F]/g, ' ')} DH`;
 };
 
